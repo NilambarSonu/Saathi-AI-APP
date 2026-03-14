@@ -1,19 +1,59 @@
 {
   "expo": {
-    "name": "Saathi",
-    "slug": "saathi",
-    "version": "1.0.0",
-    "extra": {
-      "eas": {
-        "projectId": "df1dc99a-497f-4a03-99fb-003772f87cc2"
+    "name": "Saathi AI",
+    "slug": "saathi-ai",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#0D3B1D"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "org.saathiai.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "Saathi AI needs Bluetooth to connect to your Agni soil sensor device.",
+        "NSBluetoothPeripheralUsageDescription": "Saathi AI uses Bluetooth to receive soil analysis data from Agni.",
+        "NSLocationWhenInUseUsageDescription": "Saathi AI uses your location to tag soil test results to specific field coordinates.",
+        "NSMicrophoneUsageDescription": "Saathi AI uses the microphone for voice queries to the AI assistant."
       }
     },
-    "owner": "sanatan_dev",
     "android": {
-      "package": "com.sanatan_dev.saathi"
+      "package": "org.saathiai.app",
+      "versionCode": 1,
+      "permissions": [
+        "BLUETOOTH",
+        "BLUETOOTH_ADMIN",
+        "BLUETOOTH_SCAN",
+        "BLUETOOTH_CONNECT",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "RECORD_AUDIO",
+        "RECEIVE_BOOT_COMPLETED",
+        "VIBRATE",
+        "WAKE_LOCK",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ]
     },
     "plugins": [
-      "expo-router"
-    ]
+      "expo-router",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Saathi AI to use your location for field mapping."
+        }
+      ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ca28ed31-83c5-4a7b-91e2-11b1794b319c"
+      }
+    },
+    "owner": "nilambarsonu"
   }
 }

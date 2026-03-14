@@ -1,38 +1,40 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
-const tintColorLight = '#4caf50'; // Primary Green
-const tintColorDark = '#2e7d32';
-
+// constants/Colors.ts — define exactly as follows
 export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-    primary: '#2e7d32', // Forest Green
-    secondary: '#795548', // Earth Brown  
-    accent: '#ffa000', // Orange/Yellow
-    neutral: '#ffffff', // White
-    lightGray: '#f5f5f5', // Light Grey
-    danger: 'rgba(255, 0, 0, 1)',
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-    primary: '#4caf50', // Lighter green for dark mode
-    secondary: '#8d6e63', // Lighter brown for dark mode
-    accent: '#ffb74d', // Lighter orange for dark mode
-    neutral: '#ffffff',
-    lightGray: '#333333',
-    danger: 'rgba(129, 18, 18, 1)',
-  },
+  // Primary Greens
+  primary:        '#1A7B3C',   // main brand green
+  primaryDark:    '#14562A',   // darker shade for gradients
+  primaryDeep:    '#0D3B1D',   // darkest, used in headers
+  primaryLight:   '#4CAF6E',   // lighter green for highlights
+  
+  // Background & Surface
+  background:     '#F4FBF6',   // app background (ultra-pale mint)
+  surface:        '#FFFFFF',   // cards, modals
+  surfaceAlt:     '#E8F7ED',   // mint-tinted surface (feature tiles, chips)
+  surfaceAlt2:    '#D0EDD8',   // slightly deeper mint
+
+  // Accent
+  amber:          '#F4A02D',   // harvest gold, used for warnings & highlights
+  amberDark:      '#E8892A',
+
+  // Semantic
+  error:          '#E53935',   // destructive actions, acidic soil
+  warning:        '#FF8F00',   // moderate alerts
+  info:           '#1565C0',   // informational
+  success:        '#2E7D32',   // confirmation toasts
+
+  // Typography
+  textPrimary:    '#1A2E1E',   // main text
+  textSecondary:  '#6B8A72',   // secondary/muted text
+  textMuted:      '#A0B2A4',   // added for placeholders
+  textOnDark:     '#FFFFFF',   // text on dark backgrounds
+  textOnDarkMute: 'rgba(255,255,255,0.65)',
+
+  // Borders
+  border:         '#C8E6D0',
+  borderLight:    '#E8F7ED',
+
+  // Special
+  purple:         '#7C3AED',   // Premium tier
+  premium:        '#7C3AED',   // Same as purple for convention
+  blue:           '#2563EB',   // Pro tier / Bluetooth
 };

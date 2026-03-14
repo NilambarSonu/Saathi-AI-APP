@@ -1,0 +1,150 @@
+import React, { useState } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity,
+  StyleSheet, ScrollView, ActivityIndicator,
+  KeyboardAvoidingView, Platform, Alert,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import { registerAccount } from '../../services/auth';
+import { Colors } from '../../constants/Colors';
+
+export default function RegisterScreen() {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+
+  async function handleRegister() {
+    if (!name || !email || !password) {
+      Alert.alert('Missing fields', 'Name, email and password are required.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      Alert.alert('Password mismatch', 'Passwords do not match.');
+      return;
+    }
+    if (password.length < 8) {
+      Alert.alert('Weak password', 'Password must be at least 8 characters.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const response = await registerAccount({ name, email, phone: phone || undefined, password });
+      
+      if (response.requiresOTP) {
+        // Navigate to OTP screen, pass email as param
+        router.push({
+          pathname: '/(auth)/verify-otp',
+          params: { email: response.email },
+        });
+      }
+    } catch (err: any) {
+      Alert.alert('Registration Failed', err.message || 'Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  return (
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <ScrollView style={styles.container} bounces={false}>
+        <LinearGradient colors={['#0D3B1D', '#1A7B3C']} style={styles.hero}>
+          <View style={styles.heroBadge}><Text style={{ fontSize: 20 }}>🌱</Text></View>
+          <Text style={styles.heroTitle}>
+            Empowering Farmers,{'\n'}
+            <Text style={{ color: '#A8F0C0' }}>Transforming Agriculture.</Text>
+          </Text>
+          <Text style={styles.heroSub}>Join the smart farming revolution today</Text>
+        </LinearGradient>
+
+        <View style={styles.card}>
+          {/* Tab switcher */}
+          <View style={styles.tabRow}>
+            <TouchableOpacity style={styles.tab} onPress={() => router.replace('/(auth)/login')}>
+              <Text style={styles.tabText}>Login</Text>
+            </TouchableOpacity>
+            <View style={[styles.tab, styles.tabActive]}>
+              <Text style={[styles.tabText, styles.tabTextActive]}>Register</Text>
+            </View>
+          </View>
+
+          <Text style={styles.label}>FULL NAME</Text>
+          <TextInput style={styles.input} value={name} onChangeText={setName}
+            placeholder="Ramesh Kumar" placeholderTextColor="#B0C4B8" autoComplete="name" />
+
+          <Text style={styles.label}>EMAIL ADDRESS</Text>
+          <TextInput style={styles.input} value={email} onChangeText={setEmail}
+            placeholder="ramesh@gmail.com" placeholderTextColor="#B0C4B8"
+            keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
+
+          <Text style={styles.label}>PHONE (OPTIONAL)</Text>
+          <TextInput style={styles.input} value={phone} onChangeText={setPhone}
+            placeholder="+91 98765 43210" placeholderTextColor="#B0C4B8"
+            keyboardType="phone-pad" autoComplete="tel" />
+
+          <Text style={styles.label}>PASSWORD</Text>
+          <TextInput style={styles.input} value={password} onChangeText={setPassword}
+            placeholder="Create a strong password (min 8 chars)" placeholderTextColor="#B0C4B8"
+            secureTextEntry autoComplete="new-password" />
+
+          <Text style={styles.label}>CONFIRM PASSWORD</Text>
+          <TextInput style={styles.input} value={confirmPassword} onChangeText={setConfirmPassword}
+            placeholder="Confirm your password" placeholderTextColor="#B0C4B8"
+            secureTextEntry autoComplete="new-password" />
+
+          <TouchableOpacity
+            style={[styles.btnPrimary, isLoading && { opacity: 0.7 }]}
+            onPress={handleRegister}
+            disabled={isLoading}
+            activeOpacity={0.85}
+          >
+            {isLoading
+              ? <ActivityIndicator color="#fff" />
+              : <Text style={styles.btnPrimaryText}>Send OTP →</Text>
+            }
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR CONTINUE WITH</Text>
+            <View style={styles.dividerLine} />
+          </View>
+
+          <View style={styles.socialRow}>
+            <TouchableOpacity style={styles.socialBtn}><Text style={styles.socialBtnText}>🔵 Google</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtn}><Text style={styles.socialBtnText}>📘 Facebook</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtn}><Text style={styles.socialBtnText}>✖ X</Text></TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: Colors.background },
+  hero: { paddingTop: 64, paddingHorizontal: 24, paddingBottom: 48 },
+  heroBadge: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', marginBottom: 12 },
+  heroTitle: { fontSize: 24, fontFamily: 'Sora_800ExtraBold', color: '#fff', lineHeight: 32 },
+  heroSub: { fontSize: 13, fontFamily: 'Sora_400Regular', color: 'rgba(255,255,255,0.6)', marginTop: 6 },
+  card: { backgroundColor: '#fff', borderRadius: 28, marginTop: -20, padding: 24, paddingBottom: 40 },
+  tabRow: { flexDirection: 'row', backgroundColor: Colors.surfaceAlt, borderRadius: 12, padding: 4, marginBottom: 24 },
+  tab: { flex: 1, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
+  tabActive: { backgroundColor: '#fff', elevation: 2 },
+  tabText: { fontFamily: 'Sora_600SemiBold', fontSize: 14, color: Colors.textSecondary },
+  tabTextActive: { color: Colors.primary },
+  label: { fontFamily: 'Sora_600SemiBold', fontSize: 11, color: Colors.textSecondary, letterSpacing: 0.6, marginBottom: 6, textTransform: 'uppercase' },
+  input: { height: 52, backgroundColor: Colors.background, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 16, fontFamily: 'Sora_400Regular', fontSize: 14, color: Colors.textPrimary, marginBottom: 16 },
+  btnPrimary: { height: 54, backgroundColor: Colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  btnPrimaryText: { fontFamily: 'Sora_700Bold', fontSize: 15, color: '#fff' },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
+  dividerText: { fontFamily: 'Sora_400Regular', fontSize: 11, color: Colors.textSecondary },
+  socialRow: { flexDirection: 'row', gap: 10 },
+  socialBtn: { flex: 1, height: 48, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  socialBtnText: { fontFamily: 'Sora_600SemiBold', fontSize: 12, color: Colors.textPrimary },
+});
