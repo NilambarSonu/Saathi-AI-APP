@@ -1,7 +1,20 @@
 import { BleManager, Device, Subscription } from "react-native-ble-plx";
+import { Platform } from "react-native";
 import { saveSoilRecord, SoilData, SoilTestRecord } from "../database/datastorage";
 
-const manager = new BleManager();
+let manager: BleManager | null = null;
+
+const getManager = () => {
+  if (!manager) {
+    // Only initialize on supported native platforms
+    if (Platform.OS === "android" || Platform.OS === "ios") {
+      manager = new BleManager();
+    } else {
+      throw new Error("BLE is only supported on Android and iOS.");
+    }
+  }
+  return manager;
+};
 
 const SERVICE_UUID = "12345678-1234-1234-1234-123456789abc";
 const TRANSFER_UUID = "abcdef12-3456-7890-1234-567890abcdef";
@@ -42,7 +55,8 @@ export const setDeviceDiscoveredListener = (callback: ((device: Device) => void)
 
 export const startScanning = () => {
     updateStatus("🔍 START SCAN");
-    manager.startDeviceScan(null, null, (error, device) => {
+    const m = getManager();
+    m.startDeviceScan(null, null, (error, device) => {
         if (error) {
             updateStatus(`Scan Error: ${error.message}`);
             return;
@@ -54,7 +68,8 @@ export const startScanning = () => {
 };
 
 export const stopScanning = () => {
-    manager.stopDeviceScan();
+    const m = getManager();
+    m.stopDeviceScan();
 };
 
 

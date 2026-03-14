@@ -1,6 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -14,6 +15,13 @@ Notifications.setNotificationHandler({
 
 export async function registerForPushNotifications(): Promise<string | null> {
   let token = null;
+
+  // Expo Go no longer supports remote push tokens in SDK 53+.
+  // In that environment, safely skip registration to prevent runtime errors.
+  if (Constants.appOwnership === 'expo') {
+    console.log('[Notifications] Skipping push token registration on Expo Go.');
+    return null;
+  }
 
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('default', {

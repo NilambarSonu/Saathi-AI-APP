@@ -19,9 +19,17 @@ export default function ProfileScreen() {
         { 
           text: "Sign Out", 
           style: "destructive",
-          onPress: () => {
-            clearUser();
-            router.replace('/(auth)/login');
+          onPress: async () => {
+            try {
+              const { logout: authLogout } = await import('../services/auth');
+              await authLogout();
+              clearUser();
+              router.replace('/(auth)/login');
+            } catch (err) {
+              console.error('Logout failed', err);
+              clearUser();
+              router.replace('/(auth)/login');
+            }
           }
         }
       ]

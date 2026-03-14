@@ -8,6 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { registerAccount } from '../../services/auth';
 import { Colors } from '../../constants/Colors';
+import * as WebBrowser from 'expo-web-browser';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
@@ -16,6 +17,16 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
+    try {
+      const { API_BASE } = await import('../../services/api');
+      const authUrl = `${API_BASE}/api/auth/${provider}?state=mobile`;
+      await WebBrowser.openBrowserAsync(authUrl);
+    } catch (err) {
+      Alert.alert('Social Auth Error', 'Could not open login page.');
+    }
+  }
 
   async function handleRegister() {
     if (!name || !email || !password) {
@@ -115,9 +126,9 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn}><Text style={styles.socialBtnText}>🔵 Google</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}><Text style={styles.socialBtnText}>📘 Facebook</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}><Text style={styles.socialBtnText}>✖ X</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('google')}><Text style={styles.socialBtnText}>🔵 Google</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('facebook')}><Text style={styles.socialBtnText}>📘 Facebook</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('x')}><Text style={styles.socialBtnText}>✖ X</Text></TouchableOpacity>
           </View>
         </View>
       </ScrollView>

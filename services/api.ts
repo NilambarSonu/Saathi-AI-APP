@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 
-// ── IMPORTANT: This is your live website's API ──
-export const API_BASE = 'https://saathiai.org';
+// Core API configuration
+export const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://saathiai.org';
 
 /**
  * Core API call function

@@ -9,6 +9,7 @@ import { router, Link } from 'expo-router';
 import { loginWithCredentials } from '../../services/auth';
 import { useAuthStore } from '../../store/authStore';
 import { Colors } from '../../constants/Colors';
+import * as WebBrowser from 'expo-web-browser';
 
 export default function LoginScreen() {
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
@@ -35,6 +36,16 @@ export default function LoginScreen() {
       );
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
+    try {
+      const { API_BASE } = await import('../../services/api');
+      const authUrl = `${API_BASE}/api/auth/${provider}?state=mobile`;
+      await WebBrowser.openBrowserAsync(authUrl);
+    } catch (err) {
+      Alert.alert('Social Auth Error', 'Could not open login page.');
     }
   }
 
@@ -126,13 +137,13 @@ export default function LoginScreen() {
 
           {/* Social buttons */}
           <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn}>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('google')}>
               <Text style={styles.socialBtnText}>🔵 Google</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('facebook')}>
               <Text style={styles.socialBtnText}>📘 Facebook</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn}>
+            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('x')}>
               <Text style={styles.socialBtnText}>✖ X</Text>
             </TouchableOpacity>
           </View>
