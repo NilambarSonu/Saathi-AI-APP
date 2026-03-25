@@ -12,6 +12,7 @@ import {
   Sora_700Bold, 
   Sora_800ExtraBold 
 } from '@expo-google-fonts/sora';
+import { Pacifico_400Regular } from '@expo-google-fonts/pacifico';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '../store/authStore';
 import { checkAuthStatus } from '../services/auth';
@@ -32,6 +33,7 @@ export default function RootLayout() {
     Sora_600SemiBold,
     Sora_700Bold,
     Sora_800ExtraBold,
+    Pacifico_400Regular,
   });
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function RootLayout() {
             console.warn('[Push Register Error]', err);
           }
 
-          router.replace('/(app)/dashboard');
+          router.replace('/(app)');
         } else {
           clearUser();
           // Check if first time launch
@@ -106,7 +108,7 @@ export default function RootLayout() {
             const user = await verifyAuth();
             if (user) {
               setUser(user);
-              router.replace('/(app)/dashboard');
+              router.replace('/(app)');
             }
           } catch (err) {
             console.error('[Deep Link Auth Error]', err);

@@ -1,4 +1,4 @@
-import { apiCall } from './api';
+import { api, apiCall } from './api';
 
 export interface SoilTest {
   id: string;
@@ -38,4 +38,46 @@ export async function saveSoilTest(data: Omit<SoilTest, 'id' | 'userId' | 'creat
     method: 'POST',
     body: JSON.stringify(data),
   });
+}
+
+type SoilPipelinePayload = {
+  deviceId?: string;
+  ph?: number;
+  nitrogen?: number;
+  phosphorus?: number;
+  potassium?: number;
+  moisture?: number;
+  temperature?: number;
+  ec?: number;
+  latitude?: number;
+  longitude?: number;
+  location?: string;
+  rawData?: any;
+};
+
+function toNum(v: any, fallback = 0): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+export function normalizeSoilPayload(input: SoilPipelinePayload): Record<string, any> {
+  return {
+    deviceId: input.deviceId || 'AGNI-SOIL-SENSOR',
+    ph: toNum(input.ph),
+    nitrogen: toNum(input.nitrogen),
+    phosphorus: toNum(input.phosphorus),
+    potassium: toNum(input.potassium),
+    moisture: toNum(input.moisture),
+    temperature: toNum(input.temperature),
+    ec: toNum(input.ec),
+    latitude: input.latitude,
+    longitude: input.longitude,
+    location: input.location,
+    rawData: input.rawData,
+  };
+}
+
+export async function sendSoilDataToPipeline(input: SoilPipelinePayload) {
+  const payload = normalizeSoilPayload(input);
+  return api.sendSoilData(payload);
 }

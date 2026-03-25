@@ -56,7 +56,7 @@ export default function SplashScreen() {
       } else if (!isAuthenticated) {
         router.replace('/(auth)/login');
       } else {
-        router.replace('/(app)/dashboard');
+        router.replace('/(app)');
       }
     }, 2200);
 

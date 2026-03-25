@@ -31,7 +31,7 @@ export const Colors = {
   error:          '#C62828',   // destructive actions, acidic soil
   warning:        '#E65100',   // moderate alerts
   info:           '#1565C0',   // informational
-  success:        '#1A5C35',   // confirmation toasts
+  success:        '#0fa44dff',   // confirmation toasts
 
   // Typography - Apple Style Hierarchy
   label1:    '#0D1F12',   // primary — heaviest

@@ -28,7 +28,7 @@ export default function LoginScreen() {
     try {
       const response = await loginWithCredentials(usernameOrEmail.trim(), password);
       setUser(response.user);
-      router.replace('/(app)/dashboard');
+      router.replace('/(app)');
     } catch (err: any) {
       Alert.alert(
         'Login Failed',

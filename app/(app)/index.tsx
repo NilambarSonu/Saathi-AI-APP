@@ -19,6 +19,7 @@ import { Image, Modal } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { getDashboardStats } from '../../services/analytics';
 import { getNotifications, AppNotification } from '../../services/notifications';
+import { tabBarY, hideTabBar, showTabBar } from '../../constants/Animations';
 
 function BouncingIndicator({ state }: { state: 'connecting' | 'connected' | 'disconnected' }) {
   const y = useRef(new Animated.Value(0)).current;
@@ -51,29 +52,31 @@ function BouncingIndicator({ state }: { state: 'connecting' | 'connected' | 'dis
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const getGreeting = () => {
   const h = new Date().getHours();
-  if (h < 12) return 'Good morning 🌿';
-  if (h < 17) return 'Good afternoon ☀️';
-  return 'Good evening 🌙';
+
+  if (h >= 5 && h < 12) return 'Good morning 🌿';
+  if (h >= 12 && h < 15) return 'Good afternoon ☀️';
+  if (h >= 15 && h < 18) return 'Good evening 🌇';
+  if (h >= 18 && h < 22) return 'Good night 🌙';
+
+  return 'Hello 👋';
 };
 
 const getInitials = (user: any): string => {
   const raw = user?.name || user?.username || user?.email || '';
   const parts = raw.trim().split(/[\s_@.]+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-  return raw.slice(0, 3).toUpperCase() || 'MAA';
+  return raw.slice(0, 3).toUpperCase() || 'Farmer';
 };
 
 const getFirstName = (user: any): string => {
-  const raw = user?.name || user?.username || user?.email?.split('@')[0] || 'Farmer';
-  const n = raw.split(/[\s_]+/)[0];
-  return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
+  return user?.name || user?.username || user?.email?.split('@')[0] || 'Farmer';
 };
 
 const FEATURES = [
-  { icon: 'zap', color: '#1A5C35', bg: Colors.fillGreen, title: 'Smart Fertilizer Calculation', subtitle: 'AI saves up to 30% on inputs', route: '/(app)/ai-chat' },
-  { icon: 'mic', color: '#1565C0', bg: Colors.fillBlue, title: 'Voice Advisory', subtitle: 'Speak in Odia, Hindi, or English', route: '/(app)/ai-chat' },
-  { icon: 'cpu', color: '#E65100', bg: Colors.fillAmber, title: 'Agri-Science LLM', subtitle: 'Custom AI trained on crop research', route: '/(app)/ai-chat' },
-  { icon: 'map', color: '#6A1B9A', bg: Colors.fillPurple, title: 'Crop Planning', subtitle: 'Market-driven advisory for max ROI', route: '/(app)/ai-chat' },
+  { icon: 'trending-up', color: '#21db6eff', bg: Colors.fillGreen, title: 'Instant Analysis', subtitle: 'Get comprehensive soil health data in seconds with our Agni device.', route: '/(app)/chat' },
+  { icon: 'brain', color: '#2787f6ff', bg: Colors.fillBlue, title: 'Local Language', subtitle: 'Receive recommendations in Odia, Hindi, or English with voice support.', route: '/(app)/chat' },
+  { icon: 'microscope', color: '#eab329ff', bg: Colors.fillAmber, title: 'Sustainable Farming', subtitle: 'AI-powered organic fertilizer recommendations for better crop yield.', route: '/(app)/chat' },
+  { icon: 'map-marker-radius', color: '#c438e4ff', bg: Colors.fillPurple, title: 'Field Mapping', subtitle: 'Visualize your soil data on interactive maps for better field management.', route: '/(app)/chat' },
 ];
 
 const HOW_STEPS = [
@@ -85,7 +88,7 @@ const HOW_STEPS = [
   },
   {
     num: 2, numBg: '#dbeafe', numText: '#1e40af',
-    animation: require('../../animations/Bluetooth.json'),
+    animation: require('../../animations/Bluetooth-icon.json'),
     title: 'Connect to Saathi',
     body: 'Sync your sensor data securely via Bluetooth to the Saathi mobile app.',
   },
@@ -156,6 +159,117 @@ function GlassCard({ style, children }: { style?: any; children: React.ReactNode
   );
 }
 
+function AnimatedCounter({ value, style }: { value: number, style?: any }) {
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    if (!value) {
+      setCurrent(0);
+      return;
+    }
+    const duration = 1500;
+    const steps = 30;
+    const intervalTime = duration / steps;
+    const stepValue = Math.max(1, value / steps);
+
+    let currentVal = 0;
+    const timer = setInterval(() => {
+      currentVal += stepValue;
+      if (currentVal >= value) {
+        setCurrent(value);
+        clearInterval(timer);
+      } else {
+        setCurrent(Math.floor(currentVal));
+      }
+    }, intervalTime);
+
+    return () => clearInterval(timer);
+  }, [value]);
+
+  return <Text style={style}>{current.toLocaleString('en-IN')}</Text>;
+}
+
+function FloatingAgniDevice() {
+  const y = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(y, { toValue: -12, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(y, { toValue: 0, duration: 2500, easing: Easing.inOut(Easing.ease), useNativeDriver: true })
+      ])
+    ).start();
+  }, []);
+  return (
+    <Animated.View style={{ width: 110, height: 140, alignItems: 'center', justifyContent: 'center', transform: [{ translateY: y }] }}>
+      <Image source={require('../../public/Agni_Device.png')} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} />
+    </Animated.View>
+  );
+}
+
+function HowItWorksTicker() {
+  const x = useRef(new Animated.Value(0)).current;
+  const W_CARD = 355;
+  const MARGIN = 18;
+  const totalStepsWidth = HOW_STEPS.length * (W_CARD + MARGIN);
+
+  const startAnimation = (startX = 0) => {
+    const remaining = totalStepsWidth + startX;
+    const duration = remaining * 30; // approx smooth speed
+
+    Animated.timing(x, {
+      toValue: -totalStepsWidth,
+      duration: duration,
+      easing: Easing.linear,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        x.setValue(0);
+        startAnimation(0);
+      }
+    });
+  };
+
+  useEffect(() => {
+    startAnimation(0);
+    return () => x.stopAnimation();
+  }, []);
+
+  const handlePress = () => {
+    x.stopAnimation((current) => {
+      setTimeout(() => {
+        startAnimation(current);
+      }, 5000);
+    });
+  };
+
+  const HOW_STEPS_X2 = [...HOW_STEPS, ...HOW_STEPS];
+
+  return (
+    <View style={{ overflow: 'hidden', marginHorizontal: -20 }}>
+      <Animated.View style={[{ flexDirection: 'row', paddingLeft: 20, paddingTop: 10, paddingBottom: 24 }, { transform: [{ translateX: x }] }]}>
+        {HOW_STEPS_X2.map((step, i) => (
+          <TouchableOpacity key={i} activeOpacity={0.9} onPress={handlePress}>
+            <GlassCard style={{ width: W_CARD, marginRight: MARGIN, padding: 22, height: 185, justifyContent: 'center', ...Shadows.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: step.numBg, alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                    <Text style={{ fontSize: 16, fontFamily: 'Sora_700Bold', color: step.numText }}>{step.num}</Text>
+                  </View>
+                  <Text style={{ fontSize: 18, fontFamily: 'Sora_700Bold', color: Colors.label1, marginBottom: 8, letterSpacing: -0.5 }}>{step.title}</Text>
+                  <Text numberOfLines={4} style={{ fontSize: 14, fontFamily: 'Sora_400Regular', color: Colors.label2, lineHeight: 21 }}>{step.body}</Text>
+                </View>
+                <View style={{ width: 120, height: 120 }}>
+                  <LottieView source={step.animation} autoPlay loop style={{ width: '100%', height: '100%' }} />
+                </View>
+              </View>
+            </GlassCard>
+          </TouchableOpacity>
+        ))}
+      </Animated.View>
+    </View>
+  );
+}
+
 export default function DashboardScreen() {
   const router = useRouter();
   const user = useAuthStore(s => s.user);
@@ -170,6 +284,9 @@ export default function DashboardScreen() {
     });
   }, []);
 
+  /* Tab Bar visibility logic moved to constants/Animations.ts */
+
+
   return (
     <View style={s.root}>
       {/* ── MESH BACKGROUND ── */}
@@ -179,20 +296,35 @@ export default function DashboardScreen() {
         <View style={[s.blob, { top: 150, right: -100, width: 350, height: 350, backgroundColor: 'rgba(224, 245, 233, 0.5)' }]} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll} bounces>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={s.scroll}
+        bounces
+        onScrollBeginDrag={hideTabBar}
+        onScrollEndDrag={showTabBar}
+        onMomentumScrollBegin={hideTabBar}
+        onMomentumScrollEnd={showTabBar}
+        scrollEventThrottle={16}
+      >
 
         {/* ── HEADER ── */}
         <View style={s.header}>
-          <View>
-            <Text style={[s.greeting, { fontSize: 13, marginBottom: 2 }]}>{getGreeting()}</Text>
-            <Text style={[s.name, { fontSize: 28 }]}>{getFirstName(user)}</Text>
+          <View style={{ flex: 1, paddingRight: 12 }}>
+
+            {/* ADJUST WELCOME TEXT POSITION AND SIZE HERE */}
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[s.greeting, { fontSize: 34, marginBottom: 2, marginTop: 28, paddingVertical: 10, lineHeight: 45 }]}>{getGreeting()}</Text>
+
+            {/* ADJUST USER NAME SIZE HERE */}
+
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[s.name, { fontSize: 49, fontFamily: 'Pacifico_400Regular', lineHeight: 50 }]}>{getFirstName(user)}</Text>
+
           </View>
           <View style={s.headerRight}>
             <TouchableOpacity onPress={() => setIsNotifOpen(true)} style={[s.headerBtn, { backgroundColor: Colors.surface, ...Shadows.sm }]}>
               <Feather name="bell" size={20} color={Colors.label2} />
               {(Array.isArray(notifications) ? notifications : []).some(n => !n.isRead) && <View style={s.notifDot} />}
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => router.push('/(app)/account')} style={[s.headerBtn, { backgroundColor: Colors.surface, ...Shadows.sm, padding: 0, overflow: 'hidden' }]}>
+            <TouchableOpacity onPress={() => router.push('/(app)/profile')} style={[s.headerBtn, { backgroundColor: Colors.surface, ...Shadows.sm, padding: 0, overflow: 'hidden' }]}>
               {(user as any)?.avatar_url ? (
                 <Image source={{ uri: (user as any).avatar_url }} style={{ width: 44, height: 44, borderRadius: 22 }} />
               ) : (
@@ -236,52 +368,59 @@ export default function DashboardScreen() {
         )}
 
         {/* ── STATS ROW ── */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, gap: 12 }} style={{ marginHorizontal: -20, marginBottom: 24 }}>
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 28 }}>
           {[
-            { label: 'FARMS', value: (stats?.farms || 0).toLocaleString('en-IN') },
-            { label: 'TESTS', value: (stats?.soilTests || 0).toString() },
-            { label: 'AI TIPS', value: (stats?.aiTips || 0).toString() },
+            { label: 'FARMS', value: stats?.farms || 0, icon: 'map', color: '#059669', bg: 'rgba(16, 185, 129, 0.2)', gradient: ['#F0FDF4', '#D1FAE5'] },
+            { label: 'TESTS', value: stats?.soilTests || 0, icon: 'activity', color: '#D97706', bg: 'rgba(245, 158, 11, 0.2)', gradient: ['#FFFBEB', '#FEF3C7'] },
+            { label: 'AI TIPS', value: stats?.aiTips || 0, icon: 'zap', color: '#2563EB', bg: 'rgba(59, 130, 246, 0.2)', gradient: ['#EFF6FF', '#DBEAFE'] },
           ].map((st, i) => (
-            <View key={i} style={[s.statCard, Shadows.md]}>
-              <Text style={s.statLabel}>{st.label}</Text>
-              <Text style={s.statValue}>{st.value}</Text>
-              <View style={s.statSpecular} />
+            <View key={i} style={[Shadows.sm, { flex: 1, borderRadius: 20, borderWidth: 1, borderColor: st.bg, overflow: 'hidden' }]}>
+              <LinearGradient colors={st.gradient as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+
+              <View style={{ position: 'absolute', right: -15, bottom: -15, opacity: 0.15, transform: [{ rotate: '-15deg' }] }}>
+                <Feather name={st.icon as any} size={70} color={st.color} />
+              </View>
+
+              <View style={{ paddingVertical: 14, paddingHorizontal: 12, alignItems: 'center' }}>
+                <View style={{ backgroundColor: 'rgba(255,255,255,0.7)', padding: 8, borderRadius: 12, marginBottom: 8, ...Shadows.sm }}>
+                  <Feather name={st.icon as any} size={18} color={st.color} />
+                </View>
+                <Text style={{ fontSize: 11, color: Colors.label2, fontFamily: 'Sora_700Bold', letterSpacing: 0.5, marginBottom: 4 }}>{st.label}</Text>
+                <AnimatedCounter value={st.value as number} style={{ color: st.color, fontSize: 26, fontFamily: 'Sora_700Bold', letterSpacing: -1 }} />
+              </View>
             </View>
           ))}
-        </ScrollView>
+        </View>
 
         {/* ── AGNI CONNECT HERO CARD ── */}
-        <View style={[s.heroCard, Shadows.lg]}>
-          {/* Deep dark gradient with slight tint */}
-          <LinearGradient colors={['#0F1F17', '#152C22']} style={StyleSheet.absoluteFill} />
+        <View style={[s.heroCard, Shadows.md, { backgroundColor: '#FFF5EF', borderColor: 'rgba(255, 107, 0, 0.1)', borderWidth: 1.5 }]}>
+          <LinearGradient colors={['#FFEDE4', '#F4F4F4']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
 
-          <View style={{ padding: 24, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <View style={{ flex: 1, paddingRight: 20 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                <Feather name="bluetooth" size={18} color={Colors.surface} style={{ marginRight: 8 }} />
-                <Text style={{ ...Type.title2, color: Colors.surface, letterSpacing: -0.5 }}>Connect Agni</Text>
-              </View>
-              <Text style={{ ...Type.subheadline, color: 'rgba(255,255,255,0.7)', marginBottom: 20 }}>
+          <View style={{ paddingVertical: 18, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <View style={{ flex: 1, paddingRight: 10 }}>
+              <Text style={{ fontSize: 28, fontFamily: 'Sora_700Bold', color: '#1A1A1A', marginBottom: 12, letterSpacing: -0.8 }}>Connect Agni</Text>
+              <Text style={{ fontSize: 14, fontFamily: 'Sora_500Medium', color: '#4A4A4A', lineHeight: 24, marginBottom: 24 }}>
                 Pair your soil sensor instantly for real-time insights.
               </Text>
-              <TouchableOpacity onPress={() => router.push('/(app)/live-connect')}>
-                <BlurView intensity={40} tint="light" style={s.heroBtn}>
-                  <Text style={{ ...Type.callout, fontFamily: 'Sora_600SemiBold', color: Colors.surface, marginRight: 8 }}>Pair Device</Text>
-                  <Feather name="arrow-right" size={18} color={Colors.surface} />
-                </BlurView>
+              <TouchableOpacity onPress={() => router.push('/(app)/connect')} style={{ alignSelf: 'flex-start' }}>
+                <LinearGradient colors={['#FF5F6D', '#FFC371']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.heroBtn, { borderWidth: 0, paddingHorizontal: 24 }]}>
+                  <Text style={{ fontSize: 16, fontFamily: 'Sora_600SemiBold', color: '#FFFFFF', marginRight: 10 }}>Pair Device</Text>
+                  <Feather name="arrow-right" size={18} color="#FFFFFF" />
+                </LinearGradient>
               </TouchableOpacity>
             </View>
 
             {/* Agni Animated Graphic */}
-            <View style={{ width: 80, height: 100, alignItems: 'center', justifyContent: 'center' }}>
-              <Image source={require('../../public/Agni_Device.png')} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} />
+            <View style={{ position: 'relative' }}>
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 107, 0, 0.1)', borderRadius: 50, filter: 'blur(20px)', transform: [{ scale: 1.5 }] }]} />
+              <FloatingAgniDevice />
             </View>
           </View>
         </View>
 
         {/* ── TESTING SPEED ── */}
-        <GlassCard style={{ padding: 24, marginBottom: 28, ...Shadows.md }}>
-          <Text style={{ ...Type.title3, color: Colors.label1, marginBottom: 20 }}>Testing Speed</Text>
+        <GlassCard style={{ padding: 21, marginBottom: 28, ...Shadows.md }}>
+          <Text style={{ ...Type.title3, color: Colors.label1, marginBottom: 17 }}>Testing Speed</Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }}>
             <View>
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -314,7 +453,7 @@ export default function DashboardScreen() {
             <View key={i}>
               <TouchableOpacity onPress={() => router.push(f.route as any)} style={s.featureRow}>
                 <View style={[s.featureIconBox, { backgroundColor: f.bg }]}>
-                  <Feather name={f.icon as any} size={20} color={f.color} />
+                  <MaterialCommunityIcons name={f.icon as any} size={20} color={f.color} />
                 </View>
                 <View style={{ flex: 1, marginLeft: 16 }}>
                   <Text style={s.featureTitle}>{f.title}</Text>
@@ -331,19 +470,22 @@ export default function DashboardScreen() {
 
         {/* ── HOW IT WORKS ── */}
         <SectionHeader title="How It Works" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }} style={{ marginHorizontal: -20, marginBottom: 8 }}>
-          {HOW_STEPS.map((step, i) => (
-            <GlassCard key={i} style={{ width: 280, marginRight: 16, padding: 24, alignItems: 'flex-start', ...Shadows.md }}>
-              <View style={{ width: 64, height: 64, marginBottom: 20 }}>
-                <LottieView source={step.animation} autoPlay loop style={{ width: '100%', height: '100%' }} />
-              </View>
-              <Text style={{ ...Type.headline, color: Colors.label1, marginBottom: 10 }}>{step.title}</Text>
-              <Text style={{ ...Type.callout, color: Colors.label2 }}>{step.body}</Text>
-            </GlassCard>
-          ))}
-        </ScrollView>
+        <HowItWorksTicker />
+
+        <View style={{ alignItems: 'center', marginBottom: 18, marginTop: 34, }}>
+          <Text style={{ ...Type.headline, color: Colors.label3 }}>Trusted & Recognized</Text>
+        </View>
 
         <AwardsTicker />
+
+        <View style={{ alignItems: 'flex-start', marginTop: 20, marginBottom: -18 }}>
+          <Text style={{ fontSize: 24, color: Colors.label2, fontFamily: 'Sora_600SemiBold', lineHeight: 34, marginBottom: 16, letterSpacing: -0.5 }}>
+            Har kisan ka digital saathi,{'\n'}Mitti samjho, sahi faisla lo...
+          </Text>
+          <Text style={{ fontSize: 16, color: Colors.label3, fontFamily: 'Sora_500Medium', letterSpacing: 0.2 }}>
+            💚 From Mitti AI
+          </Text>
+        </View>
       </ScrollView>
     </View>
   );
@@ -356,7 +498,7 @@ const s = StyleSheet.create({
   scroll: {
     paddingHorizontal: 20,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 110,  // critical logic for pill clearance
+    paddingBottom: 150,  // strictly increased to 150 to clear the higher floating pill
   },
   header: {
     flexDirection: 'row', justifyContent: 'space-between',

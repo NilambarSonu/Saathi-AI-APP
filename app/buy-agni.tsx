@@ -56,7 +56,7 @@ export default function BuyAgniScreen() {
       Alert.alert(
         "Order Confirmed!", 
         `Your Agni Soil Sensor is being prepared for shipment.\nOrder ID: ${data.razorpay_payment_id}`,
-        [{ text: "OK", onPress: () => router.push('/(app)/dashboard') }]
+        [{ text: "OK", onPress: () => router.push('/(app)') }]
       );
     } catch (error: any) {
       Alert.alert("Payment Failed", error.error?.description || "Something went wrong.");

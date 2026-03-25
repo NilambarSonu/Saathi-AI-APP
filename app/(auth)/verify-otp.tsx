@@ -58,7 +58,7 @@ export default function VerifyOTPScreen() {
     try {
       const response = await verifyOTP(email, code);
       setUser(response.user);
-      router.replace('/(app)/dashboard');
+      router.replace('/(app)');
     } catch (err: any) {
       Alert.alert('Invalid OTP', err.message || 'The code is incorrect or expired.');
       setOtp(Array(OTP_LENGTH).fill(''));
