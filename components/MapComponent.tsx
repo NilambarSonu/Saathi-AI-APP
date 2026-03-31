@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import MapView, { Marker, Region } from 'react-native-maps';
-import { SoilTest } from '../services/soil';
+import { SoilTest } from '../src/features/soil_analysis/services/soil';
 
 // Matches web's getPhColor logic exactly
 export const getPhColor = (ph: number): string => {

@@ -9,8 +9,8 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { Spacing } from '../../constants/Spacing';
 import { useAuthStore } from '../../store/authStore';
-import { apiCall, clearAuthTokens } from '../../services/api';
-import { logout } from '../../services/auth';
+import { apiCall, clearAuthTokens } from '../../src/core/services/api';
+import { logout } from '../../src/features/auth/services/auth';
 import * as Sharing from 'expo-sharing';
 
 const SETTINGS_KEY = 'saathi_settings';

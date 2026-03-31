@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { Text, Pressable, StyleSheet, View, Animated as RNAnimated, Easing } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { Colors } from '../../constants/Colors';
+import { Colors } from '../../../../constants/Colors';
 import { LinearGradient } from 'expo-linear-gradient';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);

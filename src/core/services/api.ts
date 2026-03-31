@@ -118,9 +118,14 @@ export async function apiCall<T = any>(
 
   const url = `${API_ROOT}${endpoint}`;
   let response: Response;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
   try {
-    response = await fetch(url, { ...options, headers });
+    response = await fetch(url, { ...options, headers, signal: controller.signal as RequestInit['signal'] });
+    clearTimeout(timeoutId);
   } catch {
+    clearTimeout(timeoutId);
     throw new Error('NETWORK_REQUEST_FAILED');
   }
 
@@ -131,7 +136,10 @@ export async function apiCall<T = any>(
       const newToken = await getStoredAccessToken();
       headers['Authorization'] = `Bearer ${newToken}`;
       try {
-        response = await fetch(url, { ...options, headers });
+        const refreshController = new AbortController();
+        const refreshTimeoutId = setTimeout(() => refreshController.abort(), 10000);
+        response = await fetch(url, { ...options, headers, signal: refreshController.signal as RequestInit['signal'] });
+        clearTimeout(refreshTimeoutId);
       } catch {
         throw new Error('NETWORK_REQUEST_FAILED');
       }
@@ -188,7 +196,11 @@ export async function fetchSoilHistory<T = any[]>(userId: string): Promise<T> {
 
   for (const url of endpoints) {
     try {
-      const res = await fetch(url, { method: 'GET', headers });
+      const historyController = new AbortController();
+      const historyTimeoutId = setTimeout(() => historyController.abort(), 10000);
+      const res = await fetch(url, { method: 'GET', headers, signal: historyController.signal as RequestInit['signal'] });
+      clearTimeout(historyTimeoutId);
+      
       if (!res.ok) {
         lastError = `Failed to fetch soil tests (HTTP ${res.status})`;
         continue;

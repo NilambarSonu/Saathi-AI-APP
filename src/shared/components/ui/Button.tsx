@@ -1,7 +1,7 @@
 import React from 'react';
 import { Text, Pressable, StyleSheet, StyleProp, ViewStyle, TextStyle } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { Colors } from '../../constants/Colors';
+import { Colors } from '../../../../constants/Colors';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 

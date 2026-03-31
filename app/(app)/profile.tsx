@@ -8,10 +8,10 @@ import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { Spacing } from '../../constants/Spacing';
 import { useAuthStore } from '../../store/authStore';
-import { apiCall } from '../../services/api';
-import { logout } from '../../services/auth';
-import { getUserProfile } from '../../services/user';
-import SwipePage from '../../components/navigation/SwipePage';
+import { apiCall } from '../../src/core/services/api';
+import { logout } from '../../src/features/auth/services/auth';
+import { getUserProfile } from '../../src/features/auth/services/user';
+import SwipePage from '../../src/shared/components/navigation/SwipePage';
 
 // ─── Helpers ────────────────────────────────────────────────
 function getProviderLabel(provider?: string) {

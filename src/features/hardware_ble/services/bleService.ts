@@ -22,7 +22,7 @@ import type {
   Subscription,
   State as BleState,
 } from 'react-native-ble-plx';
-import { saveSoilRecord, SoilData } from '../database/datastorage';
+import { saveSoilRecord, SoilData } from '../../../../database/datastorage';
 
 let legacyBleManager: any = null;
 try {

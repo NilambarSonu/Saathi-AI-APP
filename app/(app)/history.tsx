@@ -12,6 +12,13 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Dimensions, Platform, Modal, ActivityIndicator, Pressable,
 } from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  SlideInDown,
+  SlideOutUp,
+  Layout,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,16 +26,16 @@ import MapView, { Marker, PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
 import { LineChart } from 'react-native-chart-kit';
 
 // Services
-import { SoilTest } from '../../services/soil';
-import { exportSoilReport } from '../../services/pdfExport';
-import { getParameterTrend, ParameterTrend } from '../../services/analytics';
-import { fetchSoilHistory } from '../../services/api';
+import { SoilTest } from '../../src/features/soil_analysis/services/soil';
+import { exportSoilReport } from '../../src/core/services/pdfExport';
+import { getParameterTrend, ParameterTrend } from '../../src/core/services/analytics';
+import { fetchSoilHistory } from '../../src/core/services/api';
 import { useAuthStore } from '../../store/authStore';
 
 // Persistent hybrid marker system
 import { useSoilMarkers, SoilMarker } from '../../context/SoilMarkersContext';
 
-import SwipePage from '../../components/navigation/SwipePage';
+import SwipePage from '../../src/shared/components/navigation/SwipePage';
 
 const { width: W } = Dimensions.get('window');
 
@@ -597,31 +604,41 @@ export default function HistoryScreen() {
             </ScrollView>
 
             {isTimeFilterOpen && (
-              <View style={[s.dropdownMenu, { left: 8 }]}>
+              <Animated.View 
+                entering={SlideInDown.duration(200).springify()} 
+                exiting={SlideOutUp.duration(150)}
+                style={[s.dropdownMenu, { left: 8 }]}
+              >
                 {timeFilters.map((tf, index) => (
                   <TouchableOpacity
                     key={tf}
                     style={[s.dropdownItem, index !== timeFilters.length - 1 && s.dropdownItemBorder]}
                     onPress={() => { setTimeFilter(tf); setIsTimeFilterOpen(false); }}
+                    activeOpacity={0.7}
                   >
                     <Text style={[s.dropdownText, timeFilter === tf && s.dropdownTextActive]}>{tf}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </Animated.View>
             )}
 
             {isParameterOpen && (
-              <View style={s.dropdownMenu}>
+              <Animated.View 
+                entering={SlideInDown.duration(200).springify()} 
+                exiting={SlideOutUp.duration(150)}
+                style={s.dropdownMenu}
+              >
                 {parameters.map((param, index) => (
                   <TouchableOpacity
                     key={param}
                     style={[s.dropdownItem, index !== parameters.length - 1 && s.dropdownItemBorder]}
                     onPress={() => { setSelectedParam(param); setIsParameterOpen(false); }}
+                    activeOpacity={0.7}
                   >
                     <Text style={[s.dropdownText, selectedParam === param && s.dropdownTextActive]}>{param}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
+              </Animated.View>
             )}
           </View>
 
@@ -775,29 +792,38 @@ export default function HistoryScreen() {
           </GlassCard>
 
           {/* ── TEST HISTORY LOG ── */}
-          <Text style={[s.cardTitle, { marginLeft: 8, marginBottom: 12 }]}>Test History Log ({timeFilter})</Text>
-          <View style={s.logsContainer}>
-            {dbLogs.map((log) => (
-              <GlassCard key={log.id} style={s.logRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.logDate}>{formatFullDate(log.createdAt)}</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
-                    <Text style={[s.phText, safeNumber(log.ph) < 6 ? { color: '#DC2626' } : safeNumber(log.ph) > 7 ? { color: '#2563EB' } : { color: '#16A34A' }, { marginRight: 12 }]}>
-                      pH: {formatMetric(log.ph, 1)} ({safeNumber(log.ph) < 6 ? 'Acidic' : safeNumber(log.ph) > 7 ? 'Alkaline' : 'Neutral'})
-                    </Text>
-                    <Text style={s.npkText}>NPK: {safeNumber(log.n)}-{safeNumber(log.p)}-{safeNumber(log.k)}</Text>
+          <GlassCard style={[s.sectionCard, { paddingBottom: 16 }]}>
+            <Text style={[s.cardTitle, { marginBottom: 12 }]}>Test History Log ({timeFilter})</Text>
+            <ScrollView 
+              style={s.logsScrollContainer}
+              showsVerticalScrollIndicator={true}
+              persistentScrollbar={true}
+              nestedScrollEnabled={true}
+            >
+              <View style={s.logsContainer}>
+                {dbLogs.map((log) => (
+                  <GlassCard key={log.id} style={s.logRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={s.logDate}>{formatFullDate(log.createdAt)}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
+                        <Text style={[s.phText, safeNumber(log.ph) < 6 ? { color: '#DC2626' } : safeNumber(log.ph) > 7 ? { color: '#2563EB' } : { color: '#16A34A' }, { marginRight: 12 }]}>
+                          pH: {formatMetric(log.ph, 1)} ({safeNumber(log.ph) < 6 ? 'Acidic' : safeNumber(log.ph) > 7 ? 'Alkaline' : 'Neutral'})
+                        </Text>
+                        <Text style={s.npkText}>NPK: {safeNumber(log.n)}-{safeNumber(log.p)}-{safeNumber(log.k)}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color={C.textSub} />
+                  </GlassCard>
+                ))}
+                {!loadingLogs && dbLogs.length === 0 && (
+                  <View style={s.emptyLogs}>
+                    <Ionicons name="flask-outline" size={40} color={C.textSub} style={{ opacity: 0.4 }} />
+                    <Text style={s.emptyLogsText}>No soil tests recorded yet.</Text>
                   </View>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={C.textSub} />
-              </GlassCard>
-            ))}
-            {!loadingLogs && dbLogs.length === 0 && (
-              <View style={s.emptyLogs}>
-                <Ionicons name="flask-outline" size={40} color={C.textSub} style={{ opacity: 0.4 }} />
-                <Text style={s.emptyLogsText}>No soil tests recorded yet.</Text>
+                )}
               </View>
-            )}
-          </View>
+            </ScrollView>
+          </GlassCard>
 
         </ScrollView>
 
@@ -953,7 +979,16 @@ const s = StyleSheet.create({
   statLbl: { fontFamily: 'Sora_500Medium', fontSize: 10, color: C.textSub },
 
   // Logs
-  logsContainer: { gap: 10, zIndex: 1 },
+  logsScrollContainer: {
+    maxHeight: 400,
+    borderRadius: 12,
+    paddingRight: 4,
+  },
+  logsContainer: { 
+    gap: 10, 
+    zIndex: 1,
+    paddingBottom: 8,
+  },
   logRow: {
     flexDirection: 'row',
     alignItems: 'center',

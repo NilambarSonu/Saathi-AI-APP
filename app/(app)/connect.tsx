@@ -21,11 +21,11 @@ import Animated, {
   withTiming,
   cancelAnimation,
 } from 'react-native-reanimated';
-import { useBLE } from '../../hooks/useBLE';
-import { sendSoilDataToPipeline } from '../../services/soil';
+import { useBLE } from '../../src/features/hardware_ble/hooks/useBLE';
+import { sendSoilDataToPipeline } from '../../src/features/soil_analysis/services/soil';
 import { useSoilMarkers } from '../../context/SoilMarkersContext';
 import type { State as BleState } from 'react-native-ble-plx';
-import SwipePage from '../../components/navigation/SwipePage';
+import SwipePage from '../../src/shared/components/navigation/SwipePage';
 
 const { width } = Dimensions.get('window');
 type TabKey = 'soil' | 'guide';
@@ -52,7 +52,7 @@ function MetricCard({ icon, label, value, unit, color }: MetricCardProps) {
 // ─── Status config ────────────────────────────────────────────────────────────
 const STATUS_CONFIG: Record<string, { label: string; colors: [string, string, ...string[]] }> = {
   idle:             { label: 'Scan for Agni Device',      colors: ['#C77DEF', '#7B2CBF', '#5A189A'] },
-  scanning:         { label: 'Scanning…',                 colors: ['#6EA8FE', '#3B82F6']            },
+  scanning:         { label: 'Stop Scanning',             colors: ['#F59E0B', '#D97706']            },
   connecting:       { label: 'Connecting…',               colors: ['#FCD34D', '#F59E0B']            },
   connected:        { label: 'Connected — Starting…',     colors: ['#70E000', '#38B000']            },
   transferring:     { label: 'Receiving Soil Data…',      colors: ['#34D399', '#059669']            },
@@ -363,6 +363,14 @@ export default function ConnectScreen() {
 
   const handlePress = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    // If scanning, stop the scan
+    if (status === 'scanning') {
+      await disconnect(); // This will stop the scanning process
+      return;
+    }
+    
+    // If connected or complete, disconnect
     if (status === 'connected' || status === 'complete') {
       await disconnect();
     } else if (status === 'permission_denied') {

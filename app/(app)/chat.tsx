@@ -22,9 +22,9 @@ import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
 
-import { useChat, ChatMessage } from '../../hooks/useChat';
-import { api } from '../../services/api';
-import SwipePage from '../../components/navigation/SwipePage';
+import { useChat, ChatMessage } from '../../src/features/ai_assistant/hooks/useChat';
+import { api } from '../../src/core/services/api';
+import SwipePage from '../../src/shared/components/navigation/SwipePage';
 
 export default function AIChatScreen() {
   const router = useRouter();

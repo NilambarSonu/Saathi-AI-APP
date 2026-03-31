@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/Colors';
 import { Spacing } from '../../constants/Spacing';
-import { apiCall } from '../../services/api';
+import { apiCall } from '../../src/core/services/api';
 
 export interface ChatSession {
   id: string;

@@ -4,8 +4,8 @@ import { Tabs, Redirect, useRouter } from 'expo-router';
 import { BlurView } from 'expo-blur';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuthStore } from '../../store/authStore';
-import { registerForPushNotifications } from '../../services/notifications';
-import { registerDevice } from '../../services/auth';
+import { registerForPushNotifications } from '../../src/core/services/notifications';
+import { registerDevice } from '../../src/features/auth/services/auth';
 import { tabBarY } from '../../constants/Animations';
 import * as NavigationBar from 'expo-navigation-bar';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -128,9 +128,36 @@ export default function AppLayout() {
 
   useEffect(() => {
     if (Platform.OS === 'android') {
+      // Initially hide the navigation bar
       NavigationBar.setPositionAsync('absolute');
       NavigationBar.setVisibilityAsync('hidden');
-      NavigationBar.setBehaviorAsync('inset-touch');
+      NavigationBar.setBehaviorAsync('overlay-swipe');
+      
+      // Set up auto-hide: if user swipes up to show nav bar, auto-hide it after 4 seconds
+      let hideTimer: NodeJS.Timeout;
+      
+      const handleVisibilityChange = () => {
+        // Clear any existing timer
+        if (hideTimer) clearTimeout(hideTimer);
+        
+        // Set a new timer to hide after 4 seconds
+        hideTimer = setTimeout(() => {
+          NavigationBar.setVisibilityAsync('hidden').catch(err => 
+            console.warn('[NavBar] Failed to auto-hide:', err)
+          );
+        }, 4000);
+      };
+      
+      // Since React Native doesn't have a direct visibility listener for navigation bar,
+      // we'll use the app state to trigger rehide logic
+      const interval = setInterval(() => {
+        NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      }, 5000);
+      
+      return () => {
+        if (hideTimer) clearTimeout(hideTimer);
+        clearInterval(interval);
+      };
     }
   }, []);
 

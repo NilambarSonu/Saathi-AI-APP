@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import LottieView from 'lottie-react-native';
 import { Colors } from '../../constants/Colors';
 import { Spacing } from '../../constants/Spacing';
-import { apiCall } from '../../services/api';
+import { apiCall } from '../../src/core/services/api';
 
 // ─── Data ────────────────────────────────────────────────────
 const STATS = [

@@ -4,9 +4,10 @@ import {
   StyleSheet, ScrollView, ActivityIndicator,
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
+import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { registerAccount } from '../../services/auth';
+import { registerAccount } from '../../src/features/auth/services/auth';
 import { Colors } from '../../constants/Colors';
 import * as WebBrowser from 'expo-web-browser';
 
@@ -20,7 +21,7 @@ export default function RegisterScreen() {
 
   async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
     try {
-      const { API_BASE } = await import('../../services/api');
+      const { API_BASE } = await import('../../src/core/services/api');
       const authUrl = `${API_BASE}/api/auth/${provider}?state=mobile`;
       await WebBrowser.openBrowserAsync(authUrl);
     } catch (err) {
@@ -126,9 +127,21 @@ export default function RegisterScreen() {
           </View>
 
           <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('google')}><Text style={styles.socialBtnText}>🔵 Google</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('facebook')}><Text style={styles.socialBtnText}>📘 Facebook</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('x')}><Text style={styles.socialBtnText}>✖ X</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('google')}>
+              <View style={[styles.socialIconCircle, { backgroundColor: '#FFF', borderColor: '#E5E7EB' }]}>
+                <FontAwesome name="google" size={20} color="#DB4437" />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('facebook')}>
+              <View style={[styles.socialIconCircle, { backgroundColor: '#1877F2' }]}>
+                <FontAwesome name="facebook-f" size={20} color="#FFFFFF" />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('x')}>
+              <View style={[styles.socialIconCircle, { backgroundColor: '#000000' }]}>
+                <FontAwesome name="twitter" size={20} color="#FFFFFF" />
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -155,7 +168,20 @@ const styles = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
   dividerText: { fontFamily: 'Sora_400Regular', fontSize: 11, color: Colors.textSecondary },
-  socialRow: { flexDirection: 'row', gap: 10 },
-  socialBtn: { flex: 1, height: 48, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
-  socialBtnText: { fontFamily: 'Sora_600SemiBold', fontSize: 12, color: Colors.textPrimary },
+  socialRow: { flexDirection: 'row', gap: 16, justifyContent: 'center', alignItems: 'center' },
+  socialBtnCircle: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  socialIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
 });

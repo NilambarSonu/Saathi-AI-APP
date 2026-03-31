@@ -1,4 +1,4 @@
-import { api, apiCall } from './api';
+import { api, apiCall } from '../../../core/services/api';
 
 export interface SoilTest {
   id: string;

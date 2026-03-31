@@ -1,4 +1,4 @@
-import { apiCall, saveAuthTokens, clearAuthTokens, API_BASE } from './api';
+import { apiCall, saveAuthTokens, clearAuthTokens, API_BASE } from '../../../core/services/api';
 import * as SecureStore from 'expo-secure-store';
 
 export interface User {

@@ -1,4 +1,4 @@
-import { apiCall } from './api';
+import { apiCall } from '../../../core/services/api';
 
 export interface UserProfile {
   id: string;

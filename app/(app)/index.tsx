@@ -17,10 +17,10 @@ import { Shadows } from '../../constants/Shadows';
 import { Type } from '../../constants/Typography';
 import { Image, Modal } from 'react-native';
 import LottieView from 'lottie-react-native';
-import { getDashboardStats } from '../../services/analytics';
-import { getNotifications, AppNotification } from '../../services/notifications';
+import { getDashboardStats } from '../../src/core/services/analytics';
+import { getNotifications, AppNotification } from '../../src/core/services/notifications';
 import { tabBarY, hideTabBar, showTabBar } from '../../constants/Animations';
-import SwipePage from '../../components/navigation/SwipePage';
+import SwipePage from '../../src/shared/components/navigation/SwipePage';
 
 function BouncingIndicator({ state }: { state: 'connecting' | 'connected' | 'disconnected' }) {
   const y = useRef(new Animated.Value(0)).current;

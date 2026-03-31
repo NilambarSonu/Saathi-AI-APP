@@ -15,10 +15,10 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { State as BleState } from 'react-native-ble-plx';
 import { bleService, BLEStatus, LogEntry } from '../services/bleService';
-import type { SoilData } from '../database/datastorage';
+import type { SoilData } from '../../../../database/datastorage';
 
 const BLE_CONNECT_INTENT_KEY = 'saathi_ble_connect_intent';
-import { useSoil } from './useSoil';
+import { useSoil } from '../../soil_analysis/hooks/useSoil';
 
 export type { BLEStatus, LogEntry };
 

@@ -16,9 +16,10 @@ import {
 import { Pacifico_400Regular } from '@expo-google-fonts/pacifico';
 import * as SplashScreen from 'expo-splash-screen';
 import { useAuthStore } from '../store/authStore';
-import { checkAuthStatus } from '../services/auth';
+import { checkAuthStatus } from '../src/features/auth/services/auth';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 // Keep native splash visible until we're ready
 SplashScreen.preventAutoHideAsync();
@@ -49,7 +50,7 @@ export default function RootLayout() {
           // Register device for push notifications (skip on Expo Go)
           try {
             if (Constants.appOwnership !== 'expo') {
-              const { registerDevice } = await import('../services/auth');
+              const { registerDevice } = await import('../src/features/auth/services/auth');
               const expoToken = (await Notifications.getExpoPushTokenAsync()).data;
               await registerDevice({
                 expo_push_token: expoToken,
@@ -93,8 +94,8 @@ export default function RootLayout() {
 
         if (token && refreshToken) {
           try {
-            const { saveAuthTokens } = await import('../services/api');
-            const { checkAuthStatus: verifyAuth } = await import('../services/auth');
+            const { saveAuthTokens } = await import('../src/core/services/api');
+            const { checkAuthStatus: verifyAuth } = await import('../src/features/auth/services/auth');
             await saveAuthTokens(token, refreshToken);
             const user = await verifyAuth();
             if (user) {
@@ -137,7 +138,8 @@ export default function RootLayout() {
   // relying on SplashScreen.preventAutoHideAsync() to hide the view until fonts load.
 
   return (
-    <SoilMarkersProvider>
+    <ErrorBoundary>
+      <SoilMarkersProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="index" options={{ headerShown: false }} />
@@ -147,5 +149,6 @@ export default function RootLayout() {
         </Stack>
       </GestureHandlerRootView>
     </SoilMarkersProvider>
+    </ErrorBoundary>
   );
 }

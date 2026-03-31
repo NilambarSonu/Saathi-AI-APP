@@ -1,23 +1,51 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, ActivityIndicator,
   KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
+import Animated, {
+  FadeInDown,
+  FadeInUp,
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, Link } from 'expo-router';
-import { loginWithCredentials } from '../../services/auth';
-import { useAuthStore } from '../../store/authStore';
+import { loginWithCredentials } from '../../src/features/auth/services/auth';
+import { Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
 import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuthStore } from '../../store/authStore';
 
 export default function LoginScreen() {
   const [usernameOrEmail, setUsernameOrEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const { setUser } = useAuthStore();
+  const { login } = useAuthStore();
+
+  // Floating animation for the hero badge
+  const badgeFloat = useSharedValue(0);
+
+  useEffect(() => {
+    badgeFloat.value = withRepeat(
+      withSequence(
+        withTiming(-8, { duration: 2000 }),
+        withTiming(0, { duration: 2000 })
+      ),
+      -1,
+      false
+    );
+  }, []);
+
+  const badgeStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: badgeFloat.value }],
+  }));
 
   async function handleLogin() {
     if (!usernameOrEmail.trim() || !password.trim()) {
@@ -28,7 +56,9 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const response = await loginWithCredentials(usernameOrEmail.trim(), password);
-      setUser(response.user);
+      login(response.user, response.token);
+      // Clear any pending BLE intent to ensure we land on Home, not Connect
+      await AsyncStorage.removeItem('saathi_ble_connect_intent');
       router.replace('/(app)');
     } catch (err: any) {
       const rawMessage = err?.message || '';
@@ -50,7 +80,7 @@ export default function LoginScreen() {
 
   async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
     try {
-      const { API_BASE } = await import('../../services/api');
+      const { API_BASE } = await import('../../src/core/services/api');
       const authUrl = `${API_BASE}/api/auth/${provider}?state=mobile`;
       await WebBrowser.openBrowserAsync(authUrl);
     } catch (err) {
@@ -68,22 +98,32 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
     >
-      <ScrollView style={styles.container} bounces={false}>
+      <ScrollView style={styles.container} bounces={false} showsVerticalScrollIndicator={false}>
         {/* Hero Header */}
         <LinearGradient
-          colors={['#0D3B1D', '#1A7B3C']}
+          colors={['#0D3B1D', '#1A7B3C', '#22B455']}
           style={styles.hero}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
         >
-          <View style={styles.heroBadge}><Text style={styles.heroBadgeText}>🌱</Text></View>
-          <Text style={styles.heroTitle}>
-            Empowering Farmers,{'\n'}
-            <Text style={styles.heroAccent}>Transforming Agriculture.</Text>
-          </Text>
-          <Text style={styles.heroSub}>Join 10,000+ farmers across India</Text>
+          {/* Animated floating elements */}
+          <Animated.View style={[styles.floatingDot, { top: 80, left: 30, width: 60, height: 60, opacity: 0.1 }]} />
+          <Animated.View style={[styles.floatingDot, { top: 140, right: 50, width: 40, height: 40, opacity: 0.15 }]} />
+          
+          <Animated.View style={[styles.heroBadge, badgeStyle]} entering={FadeInDown.delay(200).springify()}>
+            <Text style={styles.heroBadgeText}>🌱</Text>
+          </Animated.View>
+          <Animated.Text style={styles.heroTitle} entering={FadeInDown.delay(300).springify()}>
+            Welcome Back,{'\n'}
+            <Text style={styles.heroAccent}>Farmer Friend!</Text>
+          </Animated.Text>
+          <Animated.Text style={styles.heroSub} entering={FadeInDown.delay(400).springify()}>
+            Login to access your soil insights and AI recommendations
+          </Animated.Text>
         </LinearGradient>
 
         {/* Auth Card */}
-        <View style={styles.card}>
+        <Animated.View style={styles.card} entering={FadeInUp.delay(500).springify()}>
           {/* Tab switcher */}
           <View style={styles.tabRow}>
             <View style={[styles.tab, styles.tabActive]}>
@@ -103,21 +143,25 @@ export default function LoginScreen() {
 
           {/* Form */}
           <Text style={styles.label}>USERNAME OR EMAIL</Text>
-          <TextInput
-            style={styles.input}
-            value={usernameOrEmail}
-            onChangeText={setUsernameOrEmail}
-            placeholder="farmer123 or you@gmail.com"
-            placeholderTextColor="#B0C4B8"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            autoComplete="email"
-          />
+          <View style={styles.inputContainer}>
+            <FontAwesome name="user" size={16} color="#8A9E8E" style={styles.inputIcon} />
+            <TextInput
+              style={styles.input}
+              value={usernameOrEmail}
+              onChangeText={setUsernameOrEmail}
+              placeholder="farmer123 or you@gmail.com"
+              placeholderTextColor="#B0C4B8"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              autoComplete="email"
+            />
+          </View>
 
           <Text style={styles.label}>PASSWORD</Text>
-          <View style={styles.inputRow}>
+          <View style={styles.inputContainer}>
+            <FontAwesome name="lock" size={16} color="#8A9E8E" style={styles.inputIcon} />
             <TextInput
-              style={[styles.input, { flex: 1, marginBottom: 0 }]}
+              style={[styles.input, { flex: 1 }]}
               value={password}
               onChangeText={setPassword}
               placeholder="Enter your password"
@@ -129,9 +173,13 @@ export default function LoginScreen() {
               style={styles.eyeBtn}
               onPress={() => setShowPassword(!showPassword)}
             >
-              <Text style={{ fontSize: 18 }}>{showPassword ? '🙈' : '👁'}</Text>
+              <FontAwesome name={showPassword ? 'eye-slash' : 'eye'} size={16} color="#8A9E8E" />
             </TouchableOpacity>
           </View>
+
+          <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgotLink}>
+            <Text style={styles.forgotText}>Forgot Password?</Text>
+          </TouchableOpacity>
 
           {/* Primary button */}
           <TouchableOpacity
@@ -140,10 +188,18 @@ export default function LoginScreen() {
             disabled={isLoading}
             activeOpacity={0.85}
           >
-            {isLoading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnPrimaryText}>🌱 Login to Saathi AI →</Text>
-            }
+            <LinearGradient
+              colors={isLoading ? ['#8A9E8E', '#6B7F6B'] : ['#1A7B3C', '#22B455']}
+              style={styles.btnGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.btnPrimaryText}>🌱 Login to Saathi AI →</Text>
+              )}
+            </LinearGradient>
           </TouchableOpacity>
 
           {/* Divider */}
@@ -155,17 +211,32 @@ export default function LoginScreen() {
 
           {/* Social buttons */}
           <View style={styles.socialRow}>
-            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('google')}>
-              <Text style={styles.socialBtnText}>🔵 Google</Text>
+            <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('google')}>
+              <Animated.View 
+                style={[styles.socialIconCircle, { backgroundColor: '#FFF', borderColor: '#E5E7EB' }]}
+                entering={FadeInDown.delay(600).springify()}
+              >
+                <FontAwesome name="google" size={20} color="#DB4437" />
+              </Animated.View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('facebook')}>
-              <Text style={styles.socialBtnText}>📘 Facebook</Text>
+            <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('facebook')}>
+              <Animated.View 
+                style={[styles.socialIconCircle, { backgroundColor: '#1877F2' }]}
+                entering={FadeInDown.delay(700).springify()}
+              >
+                <FontAwesome name="facebook-f" size={20} color="#FFFFFF" />
+              </Animated.View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.socialBtn} onPress={() => handleSocialLogin('x')}>
-              <Text style={styles.socialBtnText}>✖ X</Text>
+            <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('x')}>
+              <Animated.View 
+                style={[styles.socialIconCircle, { backgroundColor: '#000000' }]}
+                entering={FadeInDown.delay(800).springify()}
+              >
+                <FontAwesome name="twitter" size={20} color="#FFFFFF" />
+              </Animated.View>
             </TouchableOpacity>
           </View>
-        </View>
+        </Animated.View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -173,29 +244,68 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
-  hero: { paddingTop: 64, paddingHorizontal: 24, paddingBottom: 48 },
-  heroBadge: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-    alignSelf: 'flex-end', marginBottom: 12,
+  hero: { 
+    paddingTop: 64, 
+    paddingHorizontal: 24, 
+    paddingBottom: 48,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  heroBadgeText: { fontSize: 20 },
-  heroTitle: { fontSize: 24, fontFamily: 'Sora_800ExtraBold', color: '#fff', lineHeight: 32 },
+  floatingDot: {
+    position: 'absolute',
+    borderRadius: 999,
+    backgroundColor: '#FFF',
+  },
+  heroBadge: {
+    width: 56, 
+    height: 56, 
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', 
+    justifyContent: 'center',
+    alignSelf: 'flex-end', 
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  heroBadgeText: { fontSize: 28 },
+  heroTitle: { 
+    fontSize: 28, 
+    fontFamily: 'Sora_800ExtraBold', 
+    color: '#fff', 
+    lineHeight: 36,
+    marginBottom: 8,
+  },
   heroAccent: { color: '#A8F0C0' },
-  heroSub: { fontSize: 13, fontFamily: 'Sora_400Regular', color: 'rgba(255,255,255,0.6)', marginTop: 6 },
+  heroSub: { 
+    fontSize: 14, 
+    fontFamily: 'Sora_400Regular', 
+    color: 'rgba(255,255,255,0.8)', 
+    marginTop: 6,
+    lineHeight: 20,
+  },
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: 28, margin: 0,
+    borderRadius: 28, 
+    margin: 0,
     marginTop: -20,
     padding: 24,
     paddingBottom: 40,
     minHeight: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
   },
   tabRow: {
     flexDirection: 'row',
     backgroundColor: Colors.surfaceAlt,
-    borderRadius: 12, padding: 4,
+    borderRadius: 12, 
+    padding: 4,
     marginBottom: 24,
   },
   onboardingLinkBtn: {
@@ -208,35 +318,133 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.primary,
   },
-  tab: { flex: 1, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
-  tabActive: { backgroundColor: Colors.surface, shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 4, elevation: 2 },
-  tabText: { fontFamily: 'Sora_600SemiBold', fontSize: 14, color: Colors.textSecondary },
-  tabTextActive: { color: Colors.primary },
-  label: { fontFamily: 'Sora_600SemiBold', fontSize: 11, color: Colors.textSecondary, letterSpacing: 0.6, marginBottom: 6, textTransform: 'uppercase' },
-  input: {
-    height: 52, backgroundColor: Colors.background,
-    borderWidth: 1.5, borderColor: Colors.border,
-    borderRadius: 14, paddingHorizontal: 16,
-    fontFamily: 'Sora_400Regular', fontSize: 14,
-    color: Colors.textPrimary, marginBottom: 16,
+  tab: { 
+    flex: 1, 
+    height: 40, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderRadius: 9,
   },
-  inputRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, gap: 8 },
-  eyeBtn: { padding: 12 },
+  tabActive: { 
+    backgroundColor: Colors.surface, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.08, 
+    shadowRadius: 4, 
+    elevation: 2,
+  },
+  tabText: { 
+    fontFamily: 'Sora_600SemiBold', 
+    fontSize: 14, 
+    color: Colors.textSecondary,
+  },
+  tabTextActive: { color: Colors.primary },
+  label: { 
+    fontFamily: 'Sora_600SemiBold', 
+    fontSize: 11, 
+    color: Colors.textSecondary, 
+    letterSpacing: 0.6, 
+    marginBottom: 8, 
+    marginTop: 4,
+    textTransform: 'uppercase',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52, 
+    backgroundColor: Colors.background,
+    borderWidth: 1.5, 
+    borderColor: Colors.border,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  inputIcon: {
+    marginRight: 12,
+  },
+  input: {
+    flex: 1,
+    fontFamily: 'Sora_400Regular', 
+    fontSize: 14,
+    color: Colors.textPrimary,
+    padding: 0,
+  },
+  eyeBtn: { 
+    padding: 12,
+    marginRight: -12,
+  },
+  forgotLink: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  forgotText: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 12,
+    color: Colors.primary,
+  },
   btnPrimary: {
-    height: 54, backgroundColor: Colors.primary,
-    borderRadius: 16, alignItems: 'center',
-    justifyContent: 'center', marginTop: 4,
+    height: 54,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginTop: 4,
+    shadowColor: Colors.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnGradient: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   btnDisabled: { opacity: 0.7 },
-  btnPrimaryText: { fontFamily: 'Sora_700Bold', fontSize: 15, color: '#fff' },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },
-  dividerText: { fontFamily: 'Sora_400Regular', fontSize: 11, color: Colors.textSecondary, textAlign: 'center' },
-  socialRow: { flexDirection: 'row', gap: 10 },
-  socialBtn: {
-    flex: 1, height: 48,
-    borderWidth: 1.5, borderColor: Colors.border,
-    borderRadius: 14, alignItems: 'center', justifyContent: 'center',
+  btnPrimaryText: { 
+    fontFamily: 'Sora_700Bold', 
+    fontSize: 15, 
+    color: '#fff',
   },
-  socialBtnText: { fontFamily: 'Sora_600SemiBold', fontSize: 12, color: Colors.textPrimary },
+  divider: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 10, 
+    marginVertical: 20,
+  },
+  dividerLine: { 
+    flex: 1, 
+    height: 1, 
+    backgroundColor: Colors.border,
+  },
+  dividerText: { 
+    fontFamily: 'Sora_400Regular', 
+    fontSize: 11, 
+    color: Colors.textSecondary, 
+    textAlign: 'center',
+  },
+  socialRow: { 
+    flexDirection: 'row', 
+    gap: 16, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+  },
+  socialBtnCircle: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  socialIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
 });

@@ -4,7 +4,7 @@ import {
   StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { verifyOTP, resendOTP } from '../../services/auth';
+import { verifyOTP, resendOTP } from '../../src/features/auth/services/auth';
 import { useAuthStore } from '../../store/authStore';
 import { Colors } from '../../constants/Colors';
 
