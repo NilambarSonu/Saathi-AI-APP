@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { hideTabBar, showTabBar } from '../../constants/Animations';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   TextInput, Alert, ActivityIndicator, Switch, Platform, Image
@@ -225,7 +226,15 @@ export default function AccountScreen() {
         <Text style={styles.headerSub}>Manage your profile and preferences</Text>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        showsVerticalScrollIndicator={false}
+        onScrollBeginDrag={hideTabBar}
+        onScrollEndDrag={showTabBar}
+        onMomentumScrollBegin={hideTabBar}
+        onMomentumScrollEnd={showTabBar}
+        scrollEventThrottle={16}
+      >
 
         {/* Profile Avatar Card */}
         <View style={styles.profileCard}>

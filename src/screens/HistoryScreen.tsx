@@ -8,6 +8,7 @@
  *  - Both are merged and deduplicated before rendering on the map
  */
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { hideTabBar, showTabBar } from '../../constants/Animations';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Dimensions, Platform, Modal, ActivityIndicator, Pressable,
@@ -566,7 +567,15 @@ export default function HistoryScreen() {
           style={StyleSheet.absoluteFill}
         />
 
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={hideTabBar}
+          onScrollEndDrag={showTabBar}
+          onMomentumScrollBegin={hideTabBar}
+          onMomentumScrollEnd={showTabBar}
+          scrollEventThrottle={16}
+        >
 
           {/* ── HEADER & EXPORT ── */}
           <View style={s.headerRow}>

@@ -4,31 +4,26 @@ import {
   StyleSheet,
   TouchableOpacity,
   Text,
+  Animated,
   Platform,
 } from 'react-native';
 import { BlurView } from 'expo-blur';
-import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  interpolate,
-  Extrapolation,
-  type SharedValue,
-} from 'react-native-reanimated';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useNavigationStore } from '../../src/store/navigationStore';
+import { tabBarY } from '../../constants/Animations';
 
 import DashboardScreen from '../../src/screens/DashboardScreen';
-import ConnectScreen   from '../../src/screens/ConnectScreen';
-import ChatScreen      from '../../src/screens/ChatScreen';
-import HistoryScreen   from '../../src/screens/HistoryScreen';
-import ProfileScreen   from '../../src/screens/ProfileScreen';
+import ConnectScreen from '../../src/screens/ConnectScreen';
+import ChatScreen from '../../src/screens/ChatScreen';
+import HistoryScreen from '../../src/screens/HistoryScreen';
+import ProfileScreen from '../../src/screens/ProfileScreen';
 
 import SwipeContainer, {
   type SwipeContainerHandle,
 } from '../../src/shared/components/navigation/SwipeContainer';
 
+// ── Screens array — stable reference (module-level, never recreated) ──────────
 const SCREENS = [
   DashboardScreen,
   ConnectScreen,
@@ -38,40 +33,40 @@ const SCREENS = [
 ] as const;
 
 const TABS = [
-  { icon: 'home-outline',  lib: 'Ionicons',               label: 'HOME'    },
-  { icon: 'hubspot',       lib: 'MaterialCommunityIcons',  label: 'CONNECT' },
-  { icon: 'sparkles',      lib: 'Ionicons',               label: 'AI CHAT' },
-  { icon: 'history',       lib: 'MaterialCommunityIcons',  label: 'HISTORY' },
-  { icon: 'person-outline',lib: 'Ionicons',               label: 'PROFILE' },
+  { icon: 'home-outline', lib: 'Ionicons', label: 'HOME' },
+  { icon: 'hubspot', lib: 'MaterialCommunityIcons', label: 'CONNECT' },
+  { icon: 'sparkles', lib: 'Ionicons', label: 'AI CHAT' },
+  { icon: 'history', lib: 'MaterialCommunityIcons', label: 'HISTORY' },
+  { icon: 'person-outline', lib: 'Ionicons', label: 'PROFILE' },
 ] as const;
+
+const ACTIVE_COLOR = '#0a843dff';
+const INACTIVE_COLOR = '#9CAF9F';
+const DOT_COLOR = '#38B000';   // same vivid green the user loved
 
 export default function AppIndex() {
   const { currentIndex, setCurrentIndex } = useNavigationStore();
   const swipeRef = useRef<SwipeContainerHandle>(null);
 
-  // ── Active index as a shared value so tab bar highlights update on UI thread ─
-  const activeIdx = useSharedValue(currentIndex);
-
-  // ── Called by swipe gesture (already on JS thread) ──────────────────────────
+  // After a swipe gesture ends, the SwipeContainer calls this with the final index
   const handleSwipeChange = useCallback(
     (index: number) => {
-      activeIdx.value = index;
-      setCurrentIndex(index);    // sync Zustand for other consumers
+      setCurrentIndex(index);
     },
     [setCurrentIndex]
   );
 
-  // ── Called by tab bar tap — INSTANT, no Zustand round-trip ──────────────────
+  // Tab bar tap: call scrollTo() FIRST (instant, no re-render needed),
+  // then update Zustand so React re-renders the indicator.
   const handleTabPress = useCallback(
     (index: number) => {
-      activeIdx.value = index;         // update highlight immediately (UI thread)
-      swipeRef.current?.scrollTo(index); // animate strip (UI thread)
-      // setCurrentIndex is called inside scrollTo → onIndexChange, no need here
+      swipeRef.current?.scrollTo(index); // animation starts this frame
+      setCurrentIndex(index);            // indicator re-renders next frame
     },
-    []
+    [setCurrentIndex]
   );
 
-  // Chat tab hides the tab bar
+  // Hide the whole tab bar on the Chat screen (full-screen UX)
   const isChat = currentIndex === 2;
 
   return (
@@ -84,60 +79,46 @@ export default function AppIndex() {
       />
 
       {!isChat && (
-        <View style={s.tabContainer}>
-          <BlurView intensity={85} tint="light" style={s.pill}>
+        <Animated.View
+          style={[
+            s.tabContainer,
+            { transform: [{ translateY: tabBarY }] },
+          ]}
+        >
+          <BlurView intensity={88} tint="light" style={s.pill}>
             {TABS.map((tab, idx) => (
               <TabItem
                 key={idx}
                 tab={tab}
                 idx={idx}
-                activeIdx={activeIdx}
+                isFocused={idx === currentIndex}
                 onPress={handleTabPress}
               />
             ))}
           </BlurView>
-        </View>
+        </Animated.View>
       )}
     </View>
   );
 }
 
-// ── Tab item: reads activeIdx from shared value → highlights update on UI thread
+// ── Tab item ─────────────────────────────────────────────────────────────────
+// Uses plain React state (isFocused from Zustand) — simple & 100% reliable.
+// The dot and icon color update one React frame after the animation starts, 
+// which is imperceptible.
 function TabItem({
   tab,
   idx,
-  activeIdx,
+  isFocused,
   onPress,
 }: {
   tab: (typeof TABS)[number];
   idx: number;
-  activeIdx: SharedValue<number>;
+  isFocused: boolean;
   onPress: (idx: number) => void;
 }) {
   const IconLib =
     tab.lib === 'Ionicons' ? Ionicons : MaterialCommunityIcons;
-
-  // Animated dot indicator under the active tab
-  const dotStyle = useAnimatedStyle(() => {
-    const focused = interpolate(
-      Math.abs(activeIdx.value - idx),
-      [0, 0.5, 1],
-      [1, 0.4, 0],
-      Extrapolation.CLAMP
-    );
-    return { opacity: focused, transform: [{ scaleX: focused }] };
-  });
-
-  // Icon scale when active
-  const iconStyle = useAnimatedStyle(() => {
-    const scale = interpolate(
-      Math.abs(activeIdx.value - idx),
-      [0, 1],
-      [1.1, 1],
-      Extrapolation.CLAMP
-    );
-    return { transform: [{ scale }] };
-  });
 
   return (
     <TouchableOpacity
@@ -145,16 +126,32 @@ function TabItem({
       style={s.tabItem}
       activeOpacity={0.75}
     >
-      <Animated.View style={[s.iconBox, iconStyle]}>
+      {/* Icon with the green corner dot when focused */}
+      <View style={s.iconWrapper}>
         <IconLib
           name={tab.icon as any}
-          size={24}
-          color="#1A5C35"
+          size={isFocused ? 25 : 23}
+          color={isFocused ? ACTIVE_COLOR : INACTIVE_COLOR}
         />
-      </Animated.View>
-      <Text style={s.tabLabel}>{tab.label}</Text>
-      {/* Active indicator dot */}
-      <Animated.View style={[s.dot, dotStyle]} />
+
+        {/* ✅ The corner dot the user loves */}
+        {isFocused && (
+          <View style={s.cornerDot} />
+        )}
+      </View>
+
+      {/* Label */}
+      <Text
+        style={[
+          s.tabLabel,
+          { color: isFocused ? ACTIVE_COLOR : INACTIVE_COLOR },
+        ]}
+      >
+        {tab.label}
+      </Text>
+
+      {/* Bottom pill indicator — only shows for active tab */}
+      {isFocused && <View style={s.bottomDot} />}
     </TouchableOpacity>
   );
 }
@@ -171,7 +168,7 @@ const s = StyleSheet.create({
   },
   pill: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(240, 253, 244, 0.55)',
+    backgroundColor: 'rgba(240, 253, 244, 0.60)',
     borderRadius: 36,
     paddingHorizontal: 8,
     paddingVertical: 6,
@@ -185,25 +182,34 @@ const s = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 4,
+    gap: 2,
   },
-  iconBox: {
-    width: 38,
-    height: 38,
+
+  // Icon container — must be `position: relative` for the corner dot
+  iconWrapper: {
+    position: 'relative',
+    width: 32,
+    height: 32,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // The green corner dot — the one the user loves ✅
+  cornerDot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: DOT_COLOR,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+
   tabLabel: {
     fontSize: 9,
     fontFamily: 'Sora_700Bold',
     letterSpacing: 0.4,
-    color: '#1A5C35',
-    marginTop: 1,
-  },
-  dot: {
-    width: 14,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: '#38B000',
-    marginTop: 2,
-  },
+  }
 });

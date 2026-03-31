@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { hideTabBar, showTabBar } from '../../constants/Animations';
 import {
   View, Text, TouchableOpacity, StyleSheet, Pressable,
   ScrollView, SafeAreaView, Dimensions, Linking,
@@ -458,7 +459,15 @@ export default function ConnectScreen() {
 
   return (
     <SafeAreaView style={s.screen}>
-        <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          contentContainerStyle={s.scroll}
+          showsVerticalScrollIndicator={false}
+          onScrollBeginDrag={hideTabBar}
+          onScrollEndDrag={showTabBar}
+          onMomentumScrollBegin={hideTabBar}
+          onMomentumScrollEnd={showTabBar}
+          scrollEventThrottle={16}
+        >
 
         {/* ── HEADER ── */}
         <View style={s.header}>
