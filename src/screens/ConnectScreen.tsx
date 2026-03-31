@@ -498,7 +498,7 @@ export default function ConnectScreen() {
           <TouchableOpacity
             style={s.connectBtnContainer}
             onPress={handlePress}
-            disabled={isBusy}
+            disabled={status === 'connecting' || status === 'transferring'}
             activeOpacity={0.8}
           >
             <LinearGradient

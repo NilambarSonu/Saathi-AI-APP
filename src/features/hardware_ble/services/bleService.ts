@@ -573,6 +573,15 @@ class BLEService {
     );
 
     this._isClosing = true;
+    
+    // Stop any active scan immediately so scanAndConnect's Promise resolve path stops
+    if (this._isScanning) {
+      try {
+        const m = this._manager;
+        if (m) m.stopDeviceScan();
+      } catch { /* ignore */ }
+    }
+    
     this._isScanning = false;
     this._clearTransferTimer();
 
