@@ -103,7 +103,7 @@ export default function SettingsScreen() {
   const handleExportData = async () => {
     setIsExporting(true);
     try {
-      const data = await apiCall<any>('/api/users/export?format=json');
+      const data = await apiCall<any>('/users/export?format=json');
       const jsonString = JSON.stringify(data, null, 2);
       // Share via the system share sheet as a text blob
       if (await Sharing.isAvailableAsync()) {
@@ -139,7 +139,7 @@ export default function SettingsScreen() {
           onPress: async () => {
             setIsDeleting(true);
             try {
-              await apiCall('/api/users/me', { method: 'DELETE' });
+              await apiCall('/users/me', { method: 'DELETE' });
               await clearAuthTokens();
               clearUser();
               router.replace('/(auth)/login');

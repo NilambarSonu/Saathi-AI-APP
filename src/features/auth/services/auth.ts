@@ -1,17 +1,23 @@
-import { apiCall, saveAuthTokens, clearAuthTokens, API_BASE } from '../../../core/services/api';
+import { apiCall, saveAuthTokens, clearAuthTokens } from '../../../core/services/api';
 import * as SecureStore from 'expo-secure-store';
+import * as AuthSession from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export interface User {
   id: string;
-  name: string;
-  username: string;
-  email: string;
-  phone: string | null;
-  location: string | null;
-  profile_picture: string | null;
-  preferred_language: string;
-  provider: string;
-  created_at: string;
+  name?: string;
+  username?: string;
+  email?: string;
+  phone?: string | null;
+  location?: string | null;
+  avatar_url?: string | null;
+  profile_picture?: string | null;
+  profile_image?: string | null;
+  preferred_language?: string;
+  provider?: string;
+  created_at?: string;
 }
 
 export interface AuthResponse {
@@ -29,6 +35,29 @@ function pickString(...values: unknown[]): string | undefined {
     }
   }
   return undefined;
+}
+
+function normalizeUser(raw: any): User {
+  const id = pickString(raw?.id, raw?._id, raw?.userId) || '';
+  const name = pickString(raw?.name, raw?.full_name, raw?.displayName);
+  const username = pickString(raw?.username, raw?.handle, raw?.user_name);
+  const email = pickString(raw?.email, raw?.emailAddress);
+  const avatar = pickString(raw?.avatar_url, raw?.profile_picture, raw?.profile_image, raw?.picture);
+
+  return {
+    id,
+    name,
+    username,
+    email,
+    phone: pickString(raw?.phone, raw?.mobile) ?? null,
+    location: pickString(raw?.location, raw?.address) ?? null,
+    avatar_url: avatar ?? null,
+    profile_picture: pickString(raw?.profile_picture, raw?.avatar_url, raw?.profile_image, raw?.picture) ?? null,
+    profile_image: pickString(raw?.profile_image, raw?.avatar_url, raw?.profile_picture, raw?.picture) ?? null,
+    preferred_language: pickString(raw?.preferred_language, raw?.language) || 'en',
+    provider: pickString(raw?.provider) || 'local',
+    created_at: pickString(raw?.created_at, raw?.createdAt) || new Date().toISOString(),
+  };
 }
 
 function normalizeAuthResponse(raw: any): AuthResponse {
@@ -52,10 +81,13 @@ function normalizeAuthResponse(raw: any): AuthResponse {
     raw?.data?.refresh_token
   ) ?? '';
 
-  const user = (raw?.user ?? raw?.data?.user) as User | undefined;
-  if (!user) {
+  const userRaw = raw?.user ?? raw?.data?.user;
+  if (!userRaw) {
     throw new Error('INVALID_AUTH_USER');
   }
+
+  const user = normalizeUser(userRaw);
+  if (!user.id) throw new Error('INVALID_AUTH_USER');
 
   return {
     success: raw?.success ?? true,
@@ -168,13 +200,55 @@ export async function checkAuthStatus(): Promise<User | null> {
 
   try {
     const data = await apiCall<{ user: User }>('/auth/me');
-    return data.user;
+    return normalizeUser(data.user);
   } catch (err) {
     if ((err as Error).message === 'SESSION_EXPIRED') {
       return null; // tokens cleared by apiCall, navigate to login
     }
     return null;
   }
+}
+
+export async function loginWithSocialProvider(provider: 'google' | 'facebook' | 'x' | 'twitter'): Promise<AuthResponse> {
+  const providerPath = provider === 'twitter' ? 'x' : provider;
+  
+  const redirectUri = "saathiai://auth/callback";
+  const authUrl = `https://saathiai.org/api/auth/${providerPath}?redirect_uri=${encodeURIComponent(redirectUri)}`;
+
+  const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
+  if (result.type !== 'success' || !result.url) {
+    throw new Error('SOCIAL_AUTH_CANCELLED');
+  }
+
+  const queryString = result.url.split('?')[1] || '';
+  const params = new URLSearchParams(queryString);
+  const query = Object.fromEntries(params.entries()) as Record<string, string | undefined>;
+
+  const token = pickString(query.token, query.accessToken, query.access_token);
+  const refreshToken = pickString(query.refreshToken, query.refresh_token);
+  const error = pickString(query.error, query.message);
+
+  if (error) {
+    throw new Error(error);
+  }
+
+  if (!token) {
+    throw new Error('SOCIAL_AUTH_TOKEN_MISSING');
+  }
+
+  await saveAuthTokens(token, refreshToken);
+  const user = await checkAuthStatus();
+  if (!user) {
+    throw new Error('SOCIAL_AUTH_USER_MISSING');
+  }
+
+  return {
+    success: true,
+    token,
+    refreshToken: refreshToken || '',
+    expiresIn: 0,
+    user,
+  };
 }
 
 /**
@@ -185,7 +259,7 @@ export async function registerDevice(params: {
   device_type: 'ios' | 'android';
   device_name?: string;
 }): Promise<void> {
-  await apiCall('/api/users/device', {
+  await apiCall('/users/device', {
     method: 'POST',
     body: JSON.stringify(params),
   });

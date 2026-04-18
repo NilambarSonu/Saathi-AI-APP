@@ -90,7 +90,7 @@ export default function AboutScreen() {
     }
     setIsSending(true);
     try {
-      await apiCall('/api/contact', {
+      await apiCall('/contact', {
         method: 'POST',
         body: JSON.stringify(formData),
       });

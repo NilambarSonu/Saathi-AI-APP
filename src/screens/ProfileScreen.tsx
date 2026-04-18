@@ -54,6 +54,25 @@ const getFirstName = (user: any): string => {
   return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
 };
 
+const getUserAvatar = (u: any): string | null => {
+  return u?.avatar_url || u?.profile_image || u?.profile_picture || null;
+};
+
+const mergeUser = (base: any, patch: any) => {
+  const merged = { ...(base || {}), ...(patch || {}) };
+  const fullName = merged?.name || merged?.full_name || merged?.displayName || merged?.username || base?.name || base?.username || '';
+  const email = merged?.email || merged?.emailAddress || base?.email || '';
+  return {
+    ...merged,
+    name: fullName,
+    username: merged?.username || fullName,
+    email,
+    avatar_url: merged?.avatar_url || merged?.profile_image || merged?.profile_picture || merged?.picture || null,
+    profile_image: merged?.profile_image || merged?.avatar_url || merged?.profile_picture || merged?.picture || null,
+    profile_picture: merged?.profile_picture || merged?.avatar_url || merged?.profile_image || merged?.picture || null,
+  };
+};
+
 function FieldRow({ label, value, onChangeText, readOnly, placeholder }: {
   label: string; value: string; onChangeText?: (v: string) => void;
   readOnly?: boolean; placeholder?: string;
@@ -137,11 +156,18 @@ export default function AccountScreen() {
     // Fetch User Profile Data
     getUserProfile().then(data => {
       // Safely fold the data into our local state if it exists
-      if(data) setUser({ ...user!, ...data });
+      if (data) {
+        const nextUser = mergeUser(user, data);
+        setUser(nextUser);
+        setName(nextUser.name || nextUser.username || '');
+        setOriginalName(nextUser.name || nextUser.username || '');
+        setLocation(nextUser.location || '');
+        setOriginalLocation(nextUser.location || '');
+      }
     }).catch(() => {});
 
     // Fetch AI setting
-    apiCall<{ aiPricingEnabled: boolean }>('/api/settings')
+    apiCall<{ aiPricingEnabled: boolean }>('/settings')
       .then(data => setAiPricingEnabled(data.aiPricingEnabled))
       .catch(() => {});
   }, []);
@@ -154,7 +180,7 @@ export default function AccountScreen() {
         method: 'PATCH',
         body: JSON.stringify({ username: name, location }),
       });
-      setUser({ ...user!, name, username: name, location });
+      setUser(mergeUser(user, result?.user || { name, username: name, location }));
       setOriginalName(name);
       setOriginalLocation(location);
       Alert.alert('Saved', 'Your profile has been updated.');
@@ -168,7 +194,7 @@ export default function AccountScreen() {
   const handleAiPricingToggle = async (val: boolean) => {
     setAiPricingLoading(true);
     try {
-      await apiCall('/api/settings', {
+      await apiCall('/settings', {
         method: 'POST',
         body: JSON.stringify({ aiPricingEnabled: val }),
       });
@@ -204,7 +230,7 @@ export default function AccountScreen() {
       {
         text: 'Send Email', onPress: async () => {
           try {
-            await apiCall('/api/auth/forgot-password', {
+            await apiCall('/auth/forgot-password', {
               method: 'POST',
               body: JSON.stringify({ email: user?.email }),
             });
@@ -240,8 +266,8 @@ export default function AccountScreen() {
         <View style={styles.profileCard}>
           <View style={styles.avatarContainer}>
             <View style={styles.avatar}>
-              {(user as any)?.avatar_url ? (
-                <Image source={{ uri: (user as any).avatar_url }} style={{ width: 64, height: 64, borderRadius: 32 }} />
+              {getUserAvatar(user) ? (
+                <Image source={{ uri: getUserAvatar(user) as string }} style={{ width: 64, height: 64, borderRadius: 32 }} />
               ) : (
                 <Image source={{ uri: 'https://ui-avatars.com/api/?background=1A5C35&color=fff&name=' + encodeURIComponent(getFirstName(user)) }} style={{ width: 64, height: 64, borderRadius: 32 }} />
               )}

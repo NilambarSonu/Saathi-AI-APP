@@ -5,7 +5,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Animated, Easing, Dimensions, Platform
+  Animated, Easing, Dimensions, Platform, ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -71,6 +71,10 @@ const getInitials = (user: any): string => {
 
 const getFirstName = (user: any): string => {
   return user?.name || user?.username || user?.email?.split('@')[0] || 'Farmer';
+};
+
+const getUserAvatar = (u: any): string | null => {
+  return u?.avatar_url || u?.profile_picture || u?.profile_image || null;
 };
 
 const FEATURES = [
@@ -275,11 +279,23 @@ export default function DashboardScreen() {
   const router = useRouter();
   const user = useAuthStore(s => s.user);
   const [stats, setStats] = useState({ farms: 0, soilTests: 0, aiTips: 0 });
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const isStatsLoading = statsLoading === true;
 
   useEffect(() => {
-    getDashboardStats().then(data => setStats(data || { farms: 0, soilTests: 0, aiTips: 0 })).catch(() => setStats({ farms: 0, soilTests: 0, aiTips: 0 }));
+    setStatsLoading(true);
+    setStatsError(null);
+    getDashboardStats()
+      .then(data => setStats(data || { farms: 0, soilTests: 0, aiTips: 0 }))
+      .catch((e: any) => {
+        setStats({ farms: 0, soilTests: 0, aiTips: 0 });
+        setStatsError(e?.message || 'Unable to load dashboard stats.');
+      })
+      .finally(() => setStatsLoading(false));
+
     getNotifications().then(data => setNotifications(Array.isArray(data) ? data : [])).catch(() => {
       setNotifications([]);
     });
@@ -326,8 +342,8 @@ export default function DashboardScreen() {
               {(Array.isArray(notifications) ? notifications : []).some(n => !n.isRead) && <View style={s.notifDot} />}
             </TouchableOpacity>
             <TouchableOpacity onPress={() => useNavigationStore.getState().setCurrentIndex(4)} style={[s.headerBtn, { backgroundColor: Colors.surface, ...Shadows.sm, padding: 0, overflow: 'hidden' }]}>
-              {(user as any)?.avatar_url ? (
-                <Image source={{ uri: (user as any).avatar_url }} style={{ width: 44, height: 44, borderRadius: 22 }} />
+              {getUserAvatar(user) ? (
+                <Image source={{ uri: getUserAvatar(user) as string }} style={{ width: 44, height: 44, borderRadius: 22 }} />
               ) : (
                 <Image source={{ uri: 'https://ui-avatars.com/api/?background=1A5C35&color=fff&name=' + encodeURIComponent(getFirstName(user)) }} style={{ width: 44, height: 44, borderRadius: 22 }} />
               )}
@@ -350,8 +366,8 @@ export default function DashboardScreen() {
                 notifications.map(n => (
                   <View key={n.id} style={s.notifItem}>
                     <View style={[s.notifAvatar, { overflow: 'hidden' }]}>
-                      {(user as any)?.avatar_url ? (
-                        <Image source={{ uri: (user as any).avatar_url }} style={{ width: 40, height: 40 }} />
+                      {getUserAvatar(user) ? (
+                        <Image source={{ uri: getUserAvatar(user) as string }} style={{ width: 40, height: 40 }} />
                       ) : (
                         <Image source={{ uri: 'https://ui-avatars.com/api/?background=1A5C35&color=fff&name=' + encodeURIComponent(getFirstName(user)) }} style={{ width: 40, height: 40 }} />
                       )}
@@ -369,6 +385,13 @@ export default function DashboardScreen() {
         )}
 
         {/* ── STATS ROW ── */}
+        {statsError && (
+          <View style={[s.statsAlert, Shadows.sm]}>
+            <Feather name="alert-circle" size={14} color="#B45309" />
+            <Text style={s.statsAlertText}>{statsError}</Text>
+          </View>
+        )}
+
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 28 }}>
           {[
             { label: 'FARMS', value: stats?.farms || 0, icon: 'map', color: '#059669', bg: 'rgba(16, 185, 129, 0.2)', gradient: ['#F0FDF4', '#D1FAE5'] },
@@ -387,7 +410,9 @@ export default function DashboardScreen() {
                   <Feather name={st.icon as any} size={18} color={st.color} />
                 </View>
                 <Text style={{ fontSize: 11, color: Colors.label2, fontFamily: 'Sora_700Bold', letterSpacing: 0.5, marginBottom: 4 }}>{st.label}</Text>
-                <AnimatedCounter value={st.value as number} style={{ color: st.color, fontSize: 26, fontFamily: 'Sora_700Bold', letterSpacing: -1 }} />
+                {isStatsLoading
+                  ? <ActivityIndicator size="small" color={st.color} style={{ marginTop: 2 }} />
+                  : <AnimatedCounter value={st.value as number} style={{ color: st.color, fontSize: 26, fontFamily: 'Sora_700Bold', letterSpacing: -1 }} />}
               </View>
             </View>
           ))}
@@ -514,6 +539,24 @@ const s = StyleSheet.create({
     color: Colors.label1,
   },
   headerRight: { flexDirection: 'row', gap: 10, alignItems: 'center', marginTop: 6 },
+  statsAlert: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#FFFBEB',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginBottom: 10,
+  },
+  statsAlertText: {
+    flex: 1,
+    fontFamily: 'Sora_500Medium',
+    fontSize: 11,
+    color: '#92400E',
+  },
   headerBtn: {
     width: 44, height: 44, borderRadius: 22,
     alignItems: 'center', justifyContent: 'center',

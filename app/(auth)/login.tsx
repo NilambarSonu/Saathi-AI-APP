@@ -14,11 +14,10 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, Link } from 'expo-router';
-import { loginWithCredentials } from '../../src/features/auth/services/auth';
-import { Ionicons, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons';
+import { router } from 'expo-router';
+import { loginWithCredentials, loginWithSocialProvider } from '../../src/features/auth/services/auth';
+import { FontAwesome } from '@expo/vector-icons';
 import { Colors } from '../../constants/Colors';
-import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '../../store/authStore';
 
@@ -27,6 +26,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<null | 'google' | 'facebook' | 'x'>(null);
   const { login } = useAuthStore();
 
   // Floating animation for the hero badge
@@ -80,11 +80,16 @@ export default function LoginScreen() {
 
   async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
     try {
-      const { API_BASE } = await import('../../src/core/services/api');
-      const authUrl = `${API_BASE}/api/auth/${provider}?state=mobile`;
-      await WebBrowser.openBrowserAsync(authUrl);
-    } catch (err) {
-      Alert.alert('Social Auth Error', 'Could not open login page.');
+      setSocialLoading(provider);
+      const response = await loginWithSocialProvider(provider);
+      login(response.user, response.token);
+      await AsyncStorage.removeItem('saathi_ble_connect_intent');
+      router.replace('/(app)');
+    } catch (err: any) {
+      if (err?.message === 'SOCIAL_AUTH_CANCELLED') return;
+      Alert.alert('Social Auth Error', err?.message || 'Could not complete social login.');
+    } finally {
+      setSocialLoading(null);
     }
   }
 
@@ -216,7 +221,9 @@ export default function LoginScreen() {
                 style={[styles.socialIconCircle, { backgroundColor: '#FFF', borderColor: '#E5E7EB' }]}
                 entering={FadeInDown.delay(600).springify()}
               >
-                <FontAwesome name="google" size={20} color="#DB4437" />
+                {socialLoading === 'google'
+                  ? <ActivityIndicator size="small" color="#DB4437" />
+                  : <FontAwesome name="google" size={20} color="#DB4437" />}
               </Animated.View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('facebook')}>
@@ -224,7 +231,9 @@ export default function LoginScreen() {
                 style={[styles.socialIconCircle, { backgroundColor: '#1877F2' }]}
                 entering={FadeInDown.delay(700).springify()}
               >
-                <FontAwesome name="facebook-f" size={20} color="#FFFFFF" />
+                {socialLoading === 'facebook'
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <FontAwesome name="facebook-f" size={20} color="#FFFFFF" />}
               </Animated.View>
             </TouchableOpacity>
             <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('x')}>
@@ -232,7 +241,9 @@ export default function LoginScreen() {
                 style={[styles.socialIconCircle, { backgroundColor: '#000000' }]}
                 entering={FadeInDown.delay(800).springify()}
               >
-                <FontAwesome name="twitter" size={20} color="#FFFFFF" />
+                {socialLoading === 'x'
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <FontAwesome name="twitter" size={20} color="#FFFFFF" />}
               </Animated.View>
             </TouchableOpacity>
           </View>

@@ -7,9 +7,9 @@ import {
 import { FontAwesome } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
-import { registerAccount } from '../../src/features/auth/services/auth';
+import { loginWithSocialProvider, registerAccount } from '../../src/features/auth/services/auth';
 import { Colors } from '../../constants/Colors';
-import * as WebBrowser from 'expo-web-browser';
+import { useAuthStore } from '../../store/authStore';
 
 export default function RegisterScreen() {
   const [name, setName] = useState('');
@@ -18,14 +18,20 @@ export default function RegisterScreen() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<null | 'google' | 'facebook' | 'x'>(null);
+  const { login } = useAuthStore();
 
   async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
     try {
-      const { API_BASE } = await import('../../src/core/services/api');
-      const authUrl = `${API_BASE}/api/auth/${provider}?state=mobile`;
-      await WebBrowser.openBrowserAsync(authUrl);
-    } catch (err) {
-      Alert.alert('Social Auth Error', 'Could not open login page.');
+      setSocialLoading(provider);
+      const response = await loginWithSocialProvider(provider);
+      login(response.user, response.token);
+      router.replace('/(app)');
+    } catch (err: any) {
+      if (err?.message === 'SOCIAL_AUTH_CANCELLED') return;
+      Alert.alert('Social Auth Error', err?.message || 'Could not complete social login.');
+    } finally {
+      setSocialLoading(null);
     }
   }
 
@@ -46,9 +52,8 @@ export default function RegisterScreen() {
     setIsLoading(true);
     try {
       const response = await registerAccount({ name, email, phone: phone || undefined, password });
-      
+
       if (response.requiresOTP) {
-        // Navigate to OTP screen, pass email as param
         router.push({
           pathname: '/(auth)/verify-otp',
           params: { email: response.email },
@@ -67,14 +72,13 @@ export default function RegisterScreen() {
         <LinearGradient colors={['#0D3B1D', '#1A7B3C']} style={styles.hero}>
           <View style={styles.heroBadge}><Text style={{ fontSize: 20 }}>🌱</Text></View>
           <Text style={styles.heroTitle}>
-            Empowering Farmers,{'\n'}
+            Empowering Farmers,{"\n"}
             <Text style={{ color: '#A8F0C0' }}>Transforming Agriculture.</Text>
           </Text>
           <Text style={styles.heroSub}>Join the smart farming revolution today</Text>
         </LinearGradient>
 
         <View style={styles.card}>
-          {/* Tab switcher */}
           <View style={styles.tabRow}>
             <TouchableOpacity style={styles.tab} onPress={() => router.replace('/(auth)/login')}>
               <Text style={styles.tabText}>Login</Text>
@@ -85,28 +89,59 @@ export default function RegisterScreen() {
           </View>
 
           <Text style={styles.label}>FULL NAME</Text>
-          <TextInput style={styles.input} value={name} onChangeText={setName}
-            placeholder="Ramesh Kumar" placeholderTextColor="#B0C4B8" autoComplete="name" />
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Ramesh Kumar"
+            placeholderTextColor="#B0C4B8"
+            autoComplete="name"
+          />
 
           <Text style={styles.label}>EMAIL ADDRESS</Text>
-          <TextInput style={styles.input} value={email} onChangeText={setEmail}
-            placeholder="ramesh@gmail.com" placeholderTextColor="#B0C4B8"
-            keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
+          <TextInput
+            style={styles.input}
+            value={email}
+            onChangeText={setEmail}
+            placeholder="ramesh@gmail.com"
+            placeholderTextColor="#B0C4B8"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoComplete="email"
+          />
 
           <Text style={styles.label}>PHONE (OPTIONAL)</Text>
-          <TextInput style={styles.input} value={phone} onChangeText={setPhone}
-            placeholder="+91 98765 43210" placeholderTextColor="#B0C4B8"
-            keyboardType="phone-pad" autoComplete="tel" />
+          <TextInput
+            style={styles.input}
+            value={phone}
+            onChangeText={setPhone}
+            placeholder="+91 98765 43210"
+            placeholderTextColor="#B0C4B8"
+            keyboardType="phone-pad"
+            autoComplete="tel"
+          />
 
           <Text style={styles.label}>PASSWORD</Text>
-          <TextInput style={styles.input} value={password} onChangeText={setPassword}
-            placeholder="Create a strong password (min 8 chars)" placeholderTextColor="#B0C4B8"
-            secureTextEntry autoComplete="new-password" />
+          <TextInput
+            style={styles.input}
+            value={password}
+            onChangeText={setPassword}
+            placeholder="Create a strong password (min 8 chars)"
+            placeholderTextColor="#B0C4B8"
+            secureTextEntry
+            autoComplete="new-password"
+          />
 
           <Text style={styles.label}>CONFIRM PASSWORD</Text>
-          <TextInput style={styles.input} value={confirmPassword} onChangeText={setConfirmPassword}
-            placeholder="Confirm your password" placeholderTextColor="#B0C4B8"
-            secureTextEntry autoComplete="new-password" />
+          <TextInput
+            style={styles.input}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            placeholder="Confirm your password"
+            placeholderTextColor="#B0C4B8"
+            secureTextEntry
+            autoComplete="new-password"
+          />
 
           <TouchableOpacity
             style={[styles.btnPrimary, isLoading && { opacity: 0.7 }]}
@@ -116,8 +151,7 @@ export default function RegisterScreen() {
           >
             {isLoading
               ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnPrimaryText}>Send OTP →</Text>
-            }
+              : <Text style={styles.btnPrimaryText}>Send OTP →</Text>}
           </TouchableOpacity>
 
           <View style={styles.divider}>
@@ -128,18 +162,26 @@ export default function RegisterScreen() {
 
           <View style={styles.socialRow}>
             <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('google')}>
-              <View style={[styles.socialIconCircle, { backgroundColor: '#FFF', borderColor: '#E5E7EB' }]}>
-                <FontAwesome name="google" size={20} color="#DB4437" />
+              <View style={[styles.socialIconCircle, { backgroundColor: '#FFF', borderColor: '#E5E7EB' }]}> 
+                {socialLoading === 'google'
+                  ? <ActivityIndicator size="small" color="#DB4437" />
+                  : <FontAwesome name="google" size={20} color="#DB4437" />}
               </View>
             </TouchableOpacity>
+
             <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('facebook')}>
-              <View style={[styles.socialIconCircle, { backgroundColor: '#1877F2' }]}>
-                <FontAwesome name="facebook-f" size={20} color="#FFFFFF" />
+              <View style={[styles.socialIconCircle, { backgroundColor: '#1877F2' }]}> 
+                {socialLoading === 'facebook'
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <FontAwesome name="facebook-f" size={20} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
+
             <TouchableOpacity style={styles.socialBtnCircle} onPress={() => handleSocialLogin('x')}>
-              <View style={[styles.socialIconCircle, { backgroundColor: '#000000' }]}>
-                <FontAwesome name="twitter" size={20} color="#FFFFFF" />
+              <View style={[styles.socialIconCircle, { backgroundColor: '#000000' }]}> 
+                {socialLoading === 'x'
+                  ? <ActivityIndicator size="small" color="#FFFFFF" />
+                  : <FontAwesome name="twitter" size={20} color="#FFFFFF" />}
               </View>
             </TouchableOpacity>
           </View>
@@ -152,7 +194,10 @@ export default function RegisterScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
   hero: { paddingTop: 64, paddingHorizontal: 24, paddingBottom: 48 },
-  heroBadge: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)', alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', marginBottom: 12 },
+  heroBadge: {
+    width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end', marginBottom: 12,
+  },
   heroTitle: { fontSize: 24, fontFamily: 'Sora_800ExtraBold', color: '#fff', lineHeight: 32 },
   heroSub: { fontSize: 13, fontFamily: 'Sora_400Regular', color: 'rgba(255,255,255,0.6)', marginTop: 6 },
   card: { backgroundColor: '#fff', borderRadius: 28, marginTop: -20, padding: 24, paddingBottom: 40 },
@@ -161,9 +206,19 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: '#fff', elevation: 2 },
   tabText: { fontFamily: 'Sora_600SemiBold', fontSize: 14, color: Colors.textSecondary },
   tabTextActive: { color: Colors.primary },
-  label: { fontFamily: 'Sora_600SemiBold', fontSize: 11, color: Colors.textSecondary, letterSpacing: 0.6, marginBottom: 6, textTransform: 'uppercase' },
-  input: { height: 52, backgroundColor: Colors.background, borderWidth: 1.5, borderColor: Colors.border, borderRadius: 14, paddingHorizontal: 16, fontFamily: 'Sora_400Regular', fontSize: 14, color: Colors.textPrimary, marginBottom: 16 },
-  btnPrimary: { height: 54, backgroundColor: Colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  label: {
+    fontFamily: 'Sora_600SemiBold', fontSize: 11, color: Colors.textSecondary,
+    letterSpacing: 0.6, marginBottom: 6, textTransform: 'uppercase',
+  },
+  input: {
+    height: 52, backgroundColor: Colors.background, borderWidth: 1.5, borderColor: Colors.border,
+    borderRadius: 14, paddingHorizontal: 16, fontFamily: 'Sora_400Regular',
+    fontSize: 14, color: Colors.textPrimary, marginBottom: 16,
+  },
+  btnPrimary: {
+    height: 54, backgroundColor: Colors.primary, borderRadius: 16,
+    alignItems: 'center', justifyContent: 'center', marginTop: 4,
+  },
   btnPrimaryText: { fontFamily: 'Sora_700Bold', fontSize: 15, color: '#fff' },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 16 },
   dividerLine: { flex: 1, height: 1, backgroundColor: Colors.border },

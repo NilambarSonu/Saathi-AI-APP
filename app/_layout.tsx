@@ -85,29 +85,40 @@ export default function RootLayout() {
 
   // Handle Social Auth Callback (Step 1.10)
   useEffect(() => {
-    const handleDeepLink = async (event: { url: string }) => {
-      const { url } = event;
-      if (url.includes('saathiai://auth/callback')) {
-        const { queryParams } = Linking.parse(url);
-        const token = queryParams.token as string;
-        const refreshToken = queryParams.refreshToken as string;
+    const processAuthCallback = async (url: string) => {
+      if (!url || !url.includes('auth/callback')) return;
+      
+      console.log("OAuth success:", url);
 
-        if (token && refreshToken) {
-          try {
-            const { saveAuthTokens } = await import('../src/core/services/api');
-            const { checkAuthStatus: verifyAuth } = await import('../src/features/auth/services/auth');
-            await saveAuthTokens(token, refreshToken);
-            const user = await verifyAuth();
-            if (user) {
-              setUser(user);
-              router.replace('/(app)');
-            }
-          } catch (err) {
-            console.error('[Deep Link Auth Error]', err);
-          }
+      const { queryParams } = Linking.parse(url);
+      const token = (queryParams?.token || queryParams?.accessToken || queryParams?.access_token) as string | undefined;
+      const refreshToken = (queryParams?.refreshToken || queryParams?.refresh_token) as string | undefined;
+
+      if (!token) return;
+
+      try {
+        const { saveAuthTokens } = await import('../src/core/services/api');
+        const { checkAuthStatus: verifyAuth } = await import('../src/features/auth/services/auth');
+        await saveAuthTokens(token, refreshToken);
+        const user = await verifyAuth();
+        if (user) {
+          setUser(user);
+          router.replace('/(app)');
         }
+      } catch (err) {
+        console.error('[Deep Link Auth Error]', err);
       }
     };
+
+    const handleDeepLink = async (event: { url: string }) => {
+      await processAuthCallback(event.url);
+    };
+
+    Linking.getInitialURL().then((initialUrl) => {
+      if (initialUrl) {
+        void processAuthCallback(initialUrl);
+      }
+    });
 
     const subscription = Linking.addEventListener('url', handleDeepLink);
     return () => subscription.remove();

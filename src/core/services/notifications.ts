@@ -32,6 +32,10 @@ export async function registerForPushNotifications(): Promise<string | null> {
     });
   }
 
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ||
+    'ca28ed31-83c5-4a7b-91e2-11b1794b319c';
+
   if (Device.isDevice) {
     const { status: existingStatus } = await Notifications.getPermissionsAsync();
     let finalStatus = existingStatus;
@@ -46,9 +50,7 @@ export async function registerForPushNotifications(): Promise<string | null> {
       return null;
     }
     
-    token = (await Notifications.getExpoPushTokenAsync({
-      projectId: 'df1dc99a-497f-4a03-99fb-003772f87cc2' // Extracted from app.json
-    })).data;
+    token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
     
   } else {
     console.log('Must use physical device for Push Notifications');
@@ -73,7 +75,7 @@ export async function scheduleMonthlyTestReminder() {
     content: {
       title: 'Time for a soil test! 🌱',
       body: 'It\'s been 30 days since your last scan.',
-      data: { screen: 'live-connect' },
+      data: { screen: 'connect' },
     },
     trigger: { 
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, 
@@ -99,7 +101,7 @@ export async function scheduleBatteryAlert() {
     content: {
       title: 'Agni Battery Low 🔋',
       body: 'Agni device battery low (15%). Please charge before your next scan.',
-      data: { screen: 'live-connect' },
+      data: { screen: 'connect' },
     },
     trigger: null,
   });
@@ -132,12 +134,12 @@ export interface AppNotification {
  * Fetch the current user's notifications from the database
  */
 export async function getNotifications(): Promise<AppNotification[]> {
-  return apiCall<AppNotification[]>('/api/notifications');
+  return apiCall<AppNotification[]>('/notifications');
 }
 
 /**
  * Mark a notification as read
  */
 export async function markNotificationRead(id: string): Promise<void> {
-  return apiCall<void>(`/api/notifications/${id}/read`, { method: 'POST' });
+  return apiCall<void>(`/notifications/${id}/read`, { method: 'POST' });
 }

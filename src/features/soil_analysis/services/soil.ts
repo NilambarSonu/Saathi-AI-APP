@@ -22,8 +22,8 @@ export interface SoilTest {
 export async function getSoilTests(userId?: string): Promise<SoilTest[]> {
   const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
   const endpoint = normalizedUserId.length > 0
-    ? `/soil-tests/${encodeURIComponent(normalizedUserId)}`
-    : '/soil-tests';
+    ? `/api/soil-tests/${encodeURIComponent(normalizedUserId)}`
+    : '/api/soil-tests';
   return apiCall<SoilTest[]>(endpoint);
 }
 
@@ -31,14 +31,14 @@ export async function getSoilTests(userId?: string): Promise<SoilTest[]> {
  * Get a specific soil test by ID
  */
 export async function getSoilTest(id: string): Promise<SoilTest> {
-  return apiCall<SoilTest>(`/soil-tests/${id}`);
+  return apiCall<SoilTest>(`/api/soil-tests/${id}`);
 }
 
 /**
  * Save a new soil test record
  */
 export async function saveSoilTest(data: Omit<SoilTest, 'id' | 'userId' | 'createdAt'>): Promise<SoilTest> {
-  return apiCall<SoilTest>('/soil-tests', {
+  return apiCall<SoilTest>('/api/soil-tests', {
     method: 'POST',
     body: JSON.stringify(data),
   });
