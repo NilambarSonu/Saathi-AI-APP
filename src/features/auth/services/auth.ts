@@ -2,6 +2,7 @@ import { apiCall, saveAuthTokens, clearAuthTokens } from '../../../core/services
 import * as SecureStore from 'expo-secure-store';
 import * as AuthSession from 'expo-auth-session';
 import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -199,8 +200,11 @@ export async function checkAuthStatus(): Promise<User | null> {
   if (!token) return null;
 
   try {
-    const data = await apiCall<{ user: User }>('/auth/me');
-    return normalizeUser(data.user);
+    // Backend contract: GET /api/user — returns current user profile
+    const data = await apiCall<any>('/user');
+    // Response may be the user object directly or wrapped
+    const userRaw = data?.user ?? data;
+    return normalizeUser(userRaw);
   } catch (err) {
     if ((err as Error).message === 'SESSION_EXPIRED') {
       return null; // tokens cleared by apiCall, navigate to login
@@ -213,19 +217,26 @@ export async function loginWithSocialProvider(provider: 'google' | 'facebook' | 
   const providerPath = provider === 'twitter' ? 'x' : provider;
   
   const redirectUri = "saathiai://auth/callback";
-  const authUrl = `https://saathiai.org/api/auth/${providerPath}?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  
+  // Force account selection for Google
+  let authUrl = `https://saathiai.org/api/auth/${providerPath}?redirect_uri=${encodeURIComponent(redirectUri)}`;
+  if (provider === 'google') {
+    authUrl += '&prompt=select_account';
+  }
 
   const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
   if (result.type !== 'success' || !result.url) {
     throw new Error('SOCIAL_AUTH_CANCELLED');
   }
 
-  const queryString = result.url.split('?')[1] || '';
-  const params = new URLSearchParams(queryString);
-  const query = Object.fromEntries(params.entries()) as Record<string, string | undefined>;
+  // Use expo-linking for more robust parsing
+  const parsed = Linking.parse(result.url);
+  const query = parsed.queryParams || {};
 
+  // Extract token and userId from deep link query params
   const token = pickString(query.token, query.accessToken, query.access_token);
   const refreshToken = pickString(query.refreshToken, query.refresh_token);
+  const userId = pickString(query.userId, query.user_id, query.id);
   const error = pickString(query.error, query.message);
 
   if (error) {
@@ -236,7 +247,15 @@ export async function loginWithSocialProvider(provider: 'google' | 'facebook' | 
     throw new Error('SOCIAL_AUTH_TOKEN_MISSING');
   }
 
-  await saveAuthTokens(token, refreshToken);
+  // Store token securely before fetching profile
+  await saveAuthTokens(token, refreshToken || '');
+
+  // Also persist userId if provided in the deep link
+  if (userId) {
+    await SecureStore.setItemAsync('saathi_user_id', userId);
+  }
+
+  // Fetch user profile from GET /api/user using the stored token
   const user = await checkAuthStatus();
   if (!user) {
     throw new Error('SOCIAL_AUTH_USER_MISSING');
@@ -249,6 +268,13 @@ export async function loginWithSocialProvider(provider: 'google' | 'facebook' | 
     expiresIn: 0,
     user,
   };
+}
+
+/**
+ * Specialized Google login function (v2 patterns)
+ */
+export async function loginWithGoogle(): Promise<AuthResponse> {
+  return loginWithSocialProvider('google');
 }
 
 /**

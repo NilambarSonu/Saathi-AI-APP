@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { Stack, router, useRouter } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Platform } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
 import { SoilMarkersProvider } from '../context/SoilMarkersContext';
 import * as Linking from 'expo-linking';
 import { useFonts } from 'expo-font';
@@ -24,8 +25,10 @@ import ErrorBoundary from '../components/ErrorBoundary';
 // Keep native splash visible until we're ready
 SplashScreen.preventAutoHideAsync();
 
+WebBrowser.maybeCompleteAuthSession();
+
 export default function RootLayout() {
-  const { setUser, clearUser, setLoading } = useAuthStore();
+  const { login, clearUser, setLoading } = useAuthStore();
   const navigationRouter = useRouter();
 
   const [fontsLoaded] = useFonts({
@@ -41,11 +44,23 @@ export default function RootLayout() {
   useEffect(() => {
     async function initializeApp() {
       try {
-        // Check if user has a valid saved session
+        // ── Load persisted token first ─────────────────────────────────────
+        const { getStoredAccessToken } = await import('../src/core/services/api');
+        const token = await getStoredAccessToken();
+        console.log('[App Init] Loaded token:', token ? token.slice(0, 20) + '…' : 'NONE');
+
+        if (!token) {
+          clearUser();
+          return;
+        }
+
+        // ── Verify token is still valid by fetching user profile ──────────
         const user = await checkAuthStatus();
         
         if (user) {
-          setUser(user);
+          // ✅ Use login() — not setUser() — to populate BOTH user AND token
+          login(user, token);
+          console.log('[App Init] Auth restored for user:', user.id);
           
           // Register device for push notifications (skip on Expo Go)
           try {
@@ -66,6 +81,7 @@ export default function RootLayout() {
           // Intentionally omitting router.replace() here
           // The visual splash screen handles actual screen redirection.
         } else {
+          console.log('[App Init] Token invalid or expired — clearing auth');
           clearUser();
         }
       } catch (err) {
@@ -83,27 +99,44 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
-  // Handle Social Auth Callback (Step 1.10)
+  // Handle Social Auth Callback (deep link fallback for Android)
   useEffect(() => {
     const processAuthCallback = async (url: string) => {
       if (!url || !url.includes('auth/callback')) return;
       
-      console.log("OAuth success:", url);
+      console.log('[Deep Link] OAuth callback URL received:', url);
 
       const { queryParams } = Linking.parse(url);
-      const token = (queryParams?.token || queryParams?.accessToken || queryParams?.access_token) as string | undefined;
-      const refreshToken = (queryParams?.refreshToken || queryParams?.refresh_token) as string | undefined;
+      const token = (
+        queryParams?.token ||
+        queryParams?.accessToken ||
+        queryParams?.access_token
+      ) as string | undefined;
+      const refreshToken = (
+        queryParams?.refreshToken ||
+        queryParams?.refresh_token
+      ) as string | undefined;
 
-      if (!token) return;
+      if (!token) {
+        console.warn('[Deep Link] No token found in callback URL');
+        return;
+      }
+
+      console.log('[Deep Link] Token extracted:', token.slice(0, 20) + '…');
 
       try {
         const { saveAuthTokens } = await import('../src/core/services/api');
         const { checkAuthStatus: verifyAuth } = await import('../src/features/auth/services/auth');
+        // Store token first so apiCall can use it
         await saveAuthTokens(token, refreshToken);
         const user = await verifyAuth();
         if (user) {
-          setUser(user);
+          // ✅ Use login() to populate BOTH user AND token in the store
+          login(user, token);
+          console.log('[Deep Link] Auth complete for user:', user.id);
           router.replace('/(app)');
+        } else {
+          console.warn('[Deep Link] Could not fetch user profile after token save');
         }
       } catch (err) {
         console.error('[Deep Link Auth Error]', err);
@@ -114,8 +147,10 @@ export default function RootLayout() {
       await processAuthCallback(event.url);
     };
 
+    // Check if app was launched from a deep link (cold start)
     Linking.getInitialURL().then((initialUrl) => {
       if (initialUrl) {
+        console.log('[Deep Link] Initial URL on cold start:', initialUrl);
         void processAuthCallback(initialUrl);
       }
     });

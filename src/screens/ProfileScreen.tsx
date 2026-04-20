@@ -176,9 +176,10 @@ export default function AccountScreen() {
     if (!hasChanges) return;
     setIsSaving(true);
     try {
-      const result = await apiCall<{ user: any }>('/api/users/profile', {
-        method: 'PATCH',
-        body: JSON.stringify({ username: name, location }),
+      // Backend contract: PUT /api/user — update profile fields
+      const result = await apiCall<{ user: any }>('/user', {
+        method: 'PUT',
+        body: JSON.stringify({ name, username: name, location }),
       });
       setUser(mergeUser(user, result?.user || { name, username: name, location }));
       setOriginalName(name);

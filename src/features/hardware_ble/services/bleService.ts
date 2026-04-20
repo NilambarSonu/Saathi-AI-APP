@@ -24,12 +24,7 @@ import type {
 } from 'react-native-ble-plx';
 import { saveSoilRecord, SoilData } from '../../../../database/datastorage';
 
-let legacyBleManager: any = null;
-try {
-  legacyBleManager = require('react-native-ble-manager').default ?? null;
-} catch {
-  console.warn('[BLE] react-native-ble-manager native module unavailable.');
-}
+// Legacy react-native-ble-manager removed
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const DEVICE_NAME_KEYWORD = 'AGNI';                              // Enhancement 3
@@ -216,21 +211,12 @@ class BLEService {
     // If already on, continue immediately.
     if (await this.isBluetoothPoweredOn()) return true;
 
-    if (!legacyBleManager) {
-      this._log('info', 'System Bluetooth enable dialog is unavailable in this build. Please enable Bluetooth manually.');
-      return false;
-    }
-
-    try {
-      // Safe no-op if already started.
-      await legacyBleManager.start({ showAlert: false });
-    } catch {
-      // Continue — start may already be initialized.
-    }
+    const m = this._getManager();
+    if (!m) return false;
 
     try {
       this._log('info', 'Bluetooth is OFF. Opening system enable dialog…');
-      await legacyBleManager.enableBluetooth();
+      await m.enable();
 
       // Wait briefly for adapter state to settle to PoweredOn.
       for (let i = 0; i < 8; i++) {

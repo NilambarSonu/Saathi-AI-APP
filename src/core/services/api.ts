@@ -5,16 +5,22 @@ export const API_BASE = "https://saathiai.org/api";
 export const API_HOST = "https://saathiai.org"; 
 export const API_ROOT = API_BASE;
 
+// ─── Canonical storage keys — MUST match store/authStore.ts TOKEN_KEY ────────
+const ACCESS_TOKEN_KEY = 'saathi_access_token';
+const REFRESH_TOKEN_KEY = 'saathi_refresh_token';
+
 export async function getStoredAccessToken(): Promise<string | null> {
-  const secureToken = await SecureStore.getItemAsync('saathi_access_token');
+  // Primary: SecureStore (most secure, survives app restarts)
+  const secureToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
   if (secureToken) return secureToken;
-  return AsyncStorage.getItem('saathi_access_token');
+  // Fallback: AsyncStorage (less secure but spans RN bridge restarts)
+  return AsyncStorage.getItem(ACCESS_TOKEN_KEY);
 }
 
 export async function getStoredRefreshToken(): Promise<string | null> {
-  const secureRefresh = await SecureStore.getItemAsync('saathi_refresh_token');
+  const secureRefresh = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
   if (secureRefresh) return secureRefresh;
-  return AsyncStorage.getItem('saathi_refresh_token');
+  return AsyncStorage.getItem(REFRESH_TOKEN_KEY);
 }
 
 export async function saveAuthTokens(token: string, refreshToken?: string): Promise<void> {
@@ -22,23 +28,24 @@ export async function saveAuthTokens(token: string, refreshToken?: string): Prom
     throw new Error('INVALID_AUTH_TOKEN');
   }
 
-  await SecureStore.setItemAsync('saathi_access_token', token);
-  await AsyncStorage.setItem('saathi_access_token', token);
+  await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, token);
+  await AsyncStorage.setItem(ACCESS_TOKEN_KEY, token);
+  console.log('[API] TOKEN saved — key:', ACCESS_TOKEN_KEY, '| preview:', token.slice(0, 20) + '…');
 
   if (refreshToken) {
     if (typeof refreshToken !== 'string') {
       throw new Error('INVALID_REFRESH_TOKEN');
     }
-    await SecureStore.setItemAsync('saathi_refresh_token', refreshToken);
-    await AsyncStorage.setItem('saathi_refresh_token', refreshToken);
+    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
+    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
   }
 }
 
 export async function clearAuthTokens(): Promise<void> {
-  await SecureStore.deleteItemAsync('saathi_access_token');
-  await SecureStore.deleteItemAsync('saathi_refresh_token');
-  await AsyncStorage.removeItem('saathi_access_token');
-  await AsyncStorage.removeItem('saathi_refresh_token');
+  await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+  await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  await AsyncStorage.removeItem(ACCESS_TOKEN_KEY);
+  await AsyncStorage.removeItem(REFRESH_TOKEN_KEY);
 }
 
 export async function apiCall<T = any>(
@@ -46,13 +53,20 @@ export async function apiCall<T = any>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = await getStoredAccessToken();
+
+  // ─── DEBUG: confirm token presence on every API call ────────────────────
+  console.log(`[API] ${options.method || 'GET'} ${endpoint} | TOKEN:`, token ? token.slice(0, 20) + '…' : 'MISSING ⚠️');
   
-  const endpointPath = endpoint.startsWith('/api') ? endpoint.replace('/api', '') : (endpoint.startsWith('/') ? endpoint : `/${endpoint}`);
+  const endpointPath = endpoint.startsWith('/api')
+    ? endpoint.replace('/api', '')
+    : endpoint.startsWith('/')
+      ? endpoint
+      : `/${endpoint}`;
 
   const response = await fetch(`${API_BASE}${endpointPath}`, {
     ...options,
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
       ...(token && { Authorization: `Bearer ${token}` }),
       ...(options.headers as Record<string, string> || {})
     }
