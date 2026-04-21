@@ -1,8 +1,9 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Stack, router, useRouter } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as SecureStore from 'expo-secure-store';
 import { SoilMarkersProvider } from '../context/SoilMarkersContext';
 import * as Linking from 'expo-linking';
 import { useFonts } from 'expo-font';
@@ -30,6 +31,9 @@ WebBrowser.maybeCompleteAuthSession();
 export default function RootLayout() {
   const { login, clearUser, setLoading } = useAuthStore();
   const navigationRouter = useRouter();
+
+  // Diagnostic: confirm which scheme is active in this environment
+  console.log('[Deep Link] App scheme (createURL test):', Linking.createURL('auth/callback'));
 
   const [fontsLoaded] = useFonts({
     Sora_300Light,
@@ -104,73 +108,112 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
-  // Handle Social Auth Callback (deep link fallback for Android)
-  useEffect(() => {
-    const processAuthCallback = async (url: string) => {
-      if (!url || !url.includes('auth/callback')) return;
-      
-      console.log('[Deep Link] OAuth callback URL received:', url);
+  // ── OAuth deep-link handler ─────────────────────────────────────────────────
+  const handledUrls = useRef<Set<string>>(new Set());
 
-      const { queryParams } = Linking.parse(url);
-      const token = (
-        queryParams?.token ||
-        queryParams?.accessToken ||
-        queryParams?.access_token
-      ) as string | undefined;
-      const refreshToken = (
-        queryParams?.refreshToken ||
-        queryParams?.refresh_token
-      ) as string | undefined;
+  const processAuthCallback = async (url: string) => {
+    console.log('[OAuth] processAuthCallback START, URL:', url);
+    try {
+      // Regex-based parsing — works with ANY URL scheme, no new URL() needed
+      const tokenMatch = url.match(/[?&]token=([^&#]+)/);
+      const userIdMatch = url.match(/[?&]userId=([^&#]+)/);
+      const token = tokenMatch ? decodeURIComponent(tokenMatch[1]) : null;
+      const userId = userIdMatch ? decodeURIComponent(userIdMatch[1]) : null;
 
-      if (!token) {
-        console.warn('[Deep Link] No token found in callback URL');
+      console.log('[OAuth] Token found:', !!token, '| length:', token?.length ?? 0);
+      console.log('[OAuth] Token preview:', token?.substring(0, 30));
+      console.log('[OAuth] UserId:', userId);
+
+      if (!token || token.length < 20) {
+        console.error('[OAuth] Token missing or invalid');
+        Alert.alert('Login Failed', 'No token received. Please try again.');
+        return;
+      }
+      if (!userId) {
+        console.error('[OAuth] UserId missing');
+        Alert.alert('Login Failed', 'User ID missing. Please try again.');
         return;
       }
 
-      console.log('[Deep Link] Token extracted:', token.slice(0, 20) + '…');
+      await SecureStore.setItemAsync('auth_token', token);
+      await SecureStore.setItemAsync('user_id', userId);
+      console.log('[OAuth] SecureStore saved');
 
-      try {
-        const { saveAuthTokens, apiCall } = await import('../src/core/services/api');
-        // Store token first so apiCall can use it
-        await saveAuthTokens(token, refreshToken);
-        console.log("TOKEN:", token);
+      const authHeader = 'Bearer ' + token;
+      console.log('[OAuth] Sending Authorization header, first 40 chars:', authHeader.substring(0, 40));
 
-        const data = await apiCall('/user');
-        console.log("USER DATA:", data);
-        
-        const user = data.user || data;
-        if (user && (user.id || user._id)) {
-          useAuthStore.getState().setUser({
-            id: user.id || user._id,
-            name: user.username || user.name,
-            email: user.email,
-            avatar: user.profile_picture || user.avatar_url
-          });
-          console.log('[Deep Link] Auth complete for user:', userData.id || userData._id);
-          router.replace('/(app)');
-        } else {
-          console.warn('[Deep Link] Could not fetch user profile after token save');
-        }
-      } catch (err) {
-        console.error('[Deep Link Auth Error]', err);
+      const response = await fetch('https://saathiai.org/api/user', {
+        method: 'GET',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+          'x-client-type': 'mobile',
+        },
+      });
+
+      console.log('[OAuth] /api/user response status:', response.status);
+
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => ({}));
+        console.error('[OAuth] API error:', JSON.stringify(errBody));
+        throw new Error(errBody.error ?? 'HTTP ' + response.status);
       }
-    };
 
-    const handleDeepLink = async (event: { url: string }) => {
-      await processAuthCallback(event.url);
-    };
+      const data = await response.json();
+      console.log('[OAuth] User received:', data?.user?.username ?? data?.username);
+      const user = data.user ?? data;
 
-    // Check if app was launched from a deep link (cold start)
-    Linking.getInitialURL().then((initialUrl) => {
-      if (initialUrl) {
-        console.log('[Deep Link] Initial URL on cold start:', initialUrl);
-        void processAuthCallback(initialUrl);
+      if (!user?.id) {
+        throw new Error('User data invalid in response');
+      }
+
+      useAuthStore.getState().login(
+        {
+          id: user.id,
+          name: user.username || user.name,
+          email: user.email,
+          avatar: user.profile_picture || user.avatar_url,
+        },
+        token
+      );
+
+      console.log('[OAuth] SUCCESS — logged in as:', user.username, user.email);
+      router.replace('/(app)');
+
+    } catch (error: any) {
+      console.error('[Deep Link Auth Error]', error?.message ?? String(error));
+      await SecureStore.deleteItemAsync('auth_token').catch(() => {});
+      await SecureStore.deleteItemAsync('user_id').catch(() => {});
+      Alert.alert('Login Failed', error?.message ?? 'OAuth failed. Try again.');
+    }
+  };
+
+  // Foreground deep link — fires when app is already open
+  useEffect(() => {
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      console.log('[Deep Link] Received:', url);
+      if (url.includes('auth/callback') && url.includes('token=')) {
+        if (handledUrls.current.has(url)) return;
+        handledUrls.current.add(url);
+        processAuthCallback(url);
       }
     });
-
-    const subscription = Linking.addEventListener('url', handleDeepLink);
     return () => subscription.remove();
   }, []);
+
+  // Cold-start deep link — fires when app was launched via deep link
+  useEffect(() => {
+    Linking.getInitialURL().then((url) => {
+      if (!url) return;
+      console.log('[Deep Link] Initial URL:', url);
+      if (url.includes('auth/callback') && url.includes('token=')) {
+        if (handledUrls.current.has(url)) return;
+        handledUrls.current.add(url);
+        processAuthCallback(url);
+      }
+    });
+  }, []);
+
 
   // Global Session Expiration Listener (Step 2.10)
   useEffect(() => {

@@ -17,6 +17,20 @@ module.exports = ({ config }) => {
     },
     android: {
       ...(config.android || {}),
+      intentFilters: [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "saathiai",
+              "host": "auth",
+              "pathPrefix": "/callback"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
       config: {
         ...((config.android && config.android.config) || {}),
         googleMaps: {

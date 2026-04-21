@@ -22,13 +22,13 @@ export default function RegisterScreen() {
   const { login } = useAuthStore();
 
   async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
+    setSocialLoading(provider);
     try {
-      setSocialLoading(provider);
-      const response = await loginWithSocialProvider(provider);
-      login(response.user, response.token);
-      router.replace('/(app)');
+      // Opens the system browser. When the backend redirects back to
+      // saathiai://auth/callback?token=…, the Linking listener in _layout.tsx
+      // catches the URL, parses the token, and navigates to /(app).
+      await loginWithSocialProvider(provider);
     } catch (err: any) {
-      if (err?.message === 'SOCIAL_AUTH_CANCELLED') return;
       Alert.alert('Social Auth Error', err?.message || 'Could not complete social login.');
     } finally {
       setSocialLoading(null);

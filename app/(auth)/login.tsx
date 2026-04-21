@@ -79,15 +79,12 @@ export default function LoginScreen() {
   }
 
   async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
+    setSocialLoading(provider);
     try {
-      setSocialLoading(provider);
-      const response = await loginWithSocialProvider(provider);
-      login(response.user, response.token);
-      await AsyncStorage.removeItem('saathi_ble_connect_intent');
-      router.replace('/(app)');
+      await loginWithSocialProvider(provider);
+      // Browser closed — Linking listener in _layout.tsx handles the callback
     } catch (err: any) {
-      if (err?.message === 'SOCIAL_AUTH_CANCELLED') return;
-      Alert.alert('Social Auth Error', err?.message || 'Could not complete social login.');
+      Alert.alert('Social Auth Error', err?.message || 'Could not open login browser.');
     } finally {
       setSocialLoading(null);
     }

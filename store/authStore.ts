@@ -4,7 +4,7 @@ import { User } from '../src/features/auth/services/auth';
 
 // ─── Canonical token key ─────────────────────────────────────────────────────
 // ALL reads and writes MUST use this constant — never hard-coded strings.
-export const TOKEN_KEY = 'saathi_access_token';
+export const TOKEN_KEY = 'auth_token';
 
 interface AuthState {
   // State

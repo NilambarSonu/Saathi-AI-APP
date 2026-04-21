@@ -6,7 +6,7 @@ export const API_HOST = "https://saathiai.org";
 export const API_ROOT = API_BASE;
 
 // ─── Canonical storage keys — MUST match store/authStore.ts TOKEN_KEY ────────
-const TOKEN_KEY = 'saathi_access_token';
+const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'saathi_refresh_token';
 
 export async function getStoredAccessToken(): Promise<string | null> {
@@ -52,11 +52,18 @@ export async function apiCall<T = any>(
   endpoint: string, 
   options: RequestInit = {}
 ): Promise<T> {
-  const token = await getStoredAccessToken();
-
-  // ─── DEBUG: confirm token presence on every API call ────────────────────
-  console.log(`[API] ${options.method || 'GET'} ${endpoint} | TOKEN:`, token ? token.slice(0, 20) + '…' : 'MISSING ⚠️');
+  // Fix 2: Read token from SecureStore on EVERY call
+  const token = await SecureStore.getItemAsync('auth_token');
   
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(options.headers as Record<string, string> || {})
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const endpointPath = endpoint.startsWith('/api')
     ? endpoint.replace('/api', '')
     : endpoint.startsWith('/')
@@ -65,11 +72,7 @@ export async function apiCall<T = any>(
 
   const response = await fetch(`${API_BASE}${endpointPath}`, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': token ? `Bearer ${token}` : "",
-      ...(options.headers as Record<string, string> || {})
-    }
+    headers
   });
 
   const contentType = (response.headers.get('content-type') || '').toLowerCase();
