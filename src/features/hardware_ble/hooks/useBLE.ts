@@ -1,67 +1,65 @@
-/**
- * hooks/useBLE.ts  (v2 — Production-grade)
- *
- * Exposes:
- *   status          — BLEStatus state machine
- *   bluetoothState  — raw BleState from manager (for BT-OFF banner)
- *   soilData        — last received SoilData | null
- *   logs            — structured LogEntry[] (newest first, max 80)
- *   connect         — permissions → scan → connect → listen
- *   disconnect      — full teardown
- *   retryPermission — re-trigger connect after user grants permission
- */
-
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Linking } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { State as BleState } from 'react-native-ble-plx';
-import { bleService, BLEStatus, LogEntry } from '../services/bleService';
-import type { SoilData } from '../../../../database/datastorage';
-
-const BLE_CONNECT_INTENT_KEY = 'saathi_ble_connect_intent';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  bleService,
+  type AgniBlePayload,
+  type BLEStatus,
+  type LogEntry,
+} from '../services/bleService';
 import { useSoil } from '../../soil_analysis/hooks/useSoil';
 
-export type { BLEStatus, LogEntry };
+const BLE_CONNECT_INTENT_KEY = 'saathi_ble_connect_intent';
+
+export type { BLEStatus, LogEntry, AgniBlePayload };
 
 export interface UseBLEReturn {
-  status:         BLEStatus;
+  status: BLEStatus;
   bluetoothState: BleState | null;
-  soilData:       SoilData | null;
-  logs:           LogEntry[];
+  soilData: AgniBlePayload | null;
+  latestPayload: AgniBlePayload | null;
+  latestError: string | null;
+  logs: LogEntry[];
   permissionDenied: boolean;
   bluetoothOffModalVisible: boolean;
-  connect:        () => Promise<void>;
-  disconnect:     () => Promise<void>;
-  retryPermission:() => Promise<void>;
+  connect: () => Promise<void>;
+  disconnect: () => Promise<void>;
+  retryPermission: () => Promise<void>;
   openBluetoothSettings: () => Promise<void>;
   cancelBluetoothPrompt: () => Promise<void>;
 }
 
-// ── Friendly error messages ──────────────────────────────────────────────────
 function friendlyError(raw: string): string {
-  if (raw.startsWith('PERMISSION_DENIED:'))
-    return 'Bluetooth permission denied';
-  if (raw.startsWith('BT_NOT_READY:'))
-    return 'Bluetooth is OFF. Please enable Bluetooth in your device settings and try again.';
-  if (raw.startsWith('SCAN_TIMEOUT:'))
-    return 'Device not found. Make sure the Agni sensor is nearby and powered on, then retry.';
-  if (raw.startsWith('SCAN_IN_PROGRESS'))
-    return 'A scan is already running — please wait a moment.';
-  if (raw.startsWith('BLE not available'))
-    return 'Bluetooth is not available in this build. Please install the Saathi AI APK.';
+  if (raw.startsWith('PERMISSION_DENIED:')) {
+    return 'Bluetooth permission denied. Please enable Bluetooth permissions in Settings.';
+  }
+  if (raw.startsWith('BT_NOT_READY:')) {
+    return 'Bluetooth is OFF. Please turn Bluetooth on and try again.';
+  }
+  if (raw.startsWith('SCAN_TIMEOUT:')) {
+    return 'No Agni device found nearby. Make sure it is powered on and in range.';
+  }
+  if (raw.startsWith('CONNECT_TIMEOUT:')) {
+    return 'Agni took too long to connect. Please retry.';
+  }
+  if (raw.startsWith('BLE_PROTOCOL_GAP:')) {
+    return 'BLE protocol is not fully configured yet. UUIDs, command, and response format are still placeholders.';
+  }
   return raw;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 export function useBLE(): UseBLEReturn {
-  const [status,          setStatus]          = useState<BLEStatus>('idle');
-  const [bluetoothState,  setBluetoothState]  = useState<BleState | null>(null);
-  const [soilData,        setSoilData]        = useState<SoilData | null>(null);
-  const [logs,            setLogs]            = useState<LogEntry[]>([]);
-  const [permissionDenied,setPermissionDenied]= useState(false);
+  const [status, setStatus] = useState<BLEStatus>('idle');
+  const [bluetoothState, setBluetoothState] = useState<BleState | null>(null);
+  const [soilData, setSoilData] = useState<AgniBlePayload | null>(null);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [permissionDenied, setPermissionDenied] = useState(false);
   const [bluetoothOffModalVisible, setBluetoothOffModalVisible] = useState(false);
+  const [latestError, setLatestError] = useState<string | null>(null);
 
-  // Hook into the SaaS backend processor
+  const isMounted = useRef(true);
+  const connectIntentRef = useRef(false);
   const soilAPI = useSoil();
   const processSoilDataRef = useRef(soilAPI.processSoilData);
 
@@ -69,166 +67,126 @@ export function useBLE(): UseBLEReturn {
     processSoilDataRef.current = soilAPI.processSoilData;
   }, [soilAPI.processSoilData]);
 
-  const isMounted = useRef(true);
-  const connectIntentRef = useRef(false);
-  const scanBootRef = useRef(false);
-
-  // ── Safe setters ───────────────────────────────────────────────────────
-  const safeSetStatus = useCallback((s: BLEStatus) => {
-    if (isMounted.current) setStatus(s);
-  }, []);
-
-  const safeBtState = useCallback((s: BleState) => {
-    if (isMounted.current) setBluetoothState(s);
-  }, []);
-
   const addLog = useCallback((entry: LogEntry) => {
-    if (isMounted.current)
-      setLogs(prev => [entry, ...prev].slice(0, 80));
+    if (!isMounted.current) return;
+    setLogs((previous) => [entry, ...previous].slice(0, 80));
   }, []);
 
-  const handleData = useCallback((data: SoilData) => {
-    if (isMounted.current) {
-      setSoilData(data);
-      processSoilDataRef.current(data);
-    }
-  }, []);
-
-  // ── Mount / unmount ────────────────────────────────────────────────────
-  const beginScan = useCallback(async () => {
-    if (scanBootRef.current || bleService.isScanning) return;
-    scanBootRef.current = true;
-
-    try {
-      await bleService.scanAndConnect({
-        onStatusChange:   safeSetStatus,
-        onLog:            addLog,
-        onData:           handleData,
-        onBluetoothState: safeBtState,
-      });
-
-      bleService.startListening();
-      connectIntentRef.current = false;
-      await AsyncStorage.removeItem(BLE_CONNECT_INTENT_KEY);
-    } catch (err: any) {
-      const msg = err?.message ?? '';
-
-      if (msg.startsWith('BT_NOT_READY:')) {
-        setBluetoothOffModalVisible(true);
-        // Keep intent and wait for the Bluetooth state watcher to fire PoweredOn.
-        safeSetStatus('idle');
-        return;
-      }
-
-      if (msg.startsWith('SCAN_IN_PROGRESS')) return;
-
-      safeSetStatus('error');
+  const handleError = useCallback(
+    (message: string) => {
+      if (!isMounted.current) return;
+      const nextMessage = friendlyError(message);
+      setLatestError(nextMessage);
       addLog({
-        level:   'error',
-        message: friendlyError(msg),
-        time:    new Date().toLocaleTimeString(),
+        level: 'error',
+        message: nextMessage,
+        time: new Date().toLocaleTimeString(),
       });
-    } finally {
-      scanBootRef.current = false;
-    }
-  }, [safeSetStatus, addLog, handleData, safeBtState]);
+    },
+    [addLog]
+  );
 
-  const handleBluetoothState = useCallback((s: BleState) => {
-    safeBtState(s);
-    if (s === 'PoweredOn') {
-      setBluetoothOffModalVisible(false);
-    }
-    if (s === 'PoweredOn' && connectIntentRef.current) {
-      void beginScan();
-    }
-  }, [safeBtState, beginScan]);
+  const handleData = useCallback((payload: AgniBlePayload) => {
+    if (!isMounted.current) return;
+    setLatestError(null);
+    setSoilData(payload);
+    processSoilDataRef.current(payload);
+  }, []);
+
+  const bindCallbacks = useCallback(() => {
+    bleService.startBluetoothStateWatcher({
+      onStatusChange: (nextStatus) => {
+        if (!isMounted.current) return;
+        setStatus(nextStatus);
+        if (nextStatus === 'bluetooth_off') {
+          setBluetoothOffModalVisible(true);
+        }
+      },
+      onLog: addLog,
+      onData: handleData,
+      onBluetoothState: (state) => {
+        if (!isMounted.current) return;
+        setBluetoothState(state);
+        if (state === 'PoweredOn') {
+          setBluetoothOffModalVisible(false);
+          if (connectIntentRef.current) {
+            void connect();
+          }
+        }
+      },
+      onError: handleError,
+    });
+  }, [addLog, handleData, handleError]);
 
   useEffect(() => {
     isMounted.current = true;
-
-    // Start BT state watcher immediately so the banner appears on screen open
-    bleService.startBluetoothStateWatcher({
-      onStatusChange:   safeSetStatus,
-      onLog:            addLog,
-      onData:           () => {},          // BT state watcher doesn't emit data
-      onBluetoothState: handleBluetoothState,
-    });
+    bindCallbacks();
 
     void (async () => {
       const hasIntent = await AsyncStorage.getItem(BLE_CONNECT_INTENT_KEY);
-      if (hasIntent !== '1') return;
-
-      connectIntentRef.current = true;
-      const isOn = await bleService.isBluetoothPoweredOn();
-      if (isOn) {
-        void beginScan();
-      } else {
-        safeSetStatus('bluetooth_off');
+      if (hasIntent === '1') {
+        connectIntentRef.current = true;
       }
     })();
 
     return () => {
       isMounted.current = false;
-      bleService.disconnect().catch(() => {});
+      void bleService.disconnect();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [bindCallbacks]);
 
-  // ── Connect ────────────────────────────────────────────────────────────
   const connect = useCallback(async () => {
-    // Prevent duplicate session
-    if (status === 'scanning' || status === 'connecting') return;
+    if (status === 'scanning' || status === 'connecting' || status === 'transferring') {
+      return;
+    }
 
     setSoilData(null);
     setLogs([]);
     setPermissionDenied(false);
+    setLatestError(null);
     connectIntentRef.current = true;
     await AsyncStorage.setItem(BLE_CONNECT_INTENT_KEY, '1');
 
     try {
-      // 1. Permissions
-      await bleService.requestAndroidPermissions();
+      await bleService.connectAndRead({
+        onStatusChange: setStatus,
+        onLog: addLog,
+        onData: handleData,
+        onBluetoothState: setBluetoothState,
+        onError: handleError,
+      });
+      connectIntentRef.current = false;
+      await AsyncStorage.removeItem(BLE_CONNECT_INTENT_KEY);
+    } catch (error: any) {
+      const message = error?.message || 'Unknown BLE error';
 
-      // 2. If BT is off, show controlled modal and stop flow
-      const state = await bleService.getBluetoothState();
-      if (state !== 'PoweredOn') {
-        safeSetStatus('bluetooth_off');
-        setBluetoothOffModalVisible(true);
-        return;
-      }
-
-      // 3. Scan → Connect
-      await beginScan();
-
-    } catch (err: any) {
-      const msg = err?.message ?? '';
-
-      if (msg.startsWith('PERMISSION_DENIED:')) {
+      if (message.startsWith('PERMISSION_DENIED:')) {
         setPermissionDenied(true);
-        safeSetStatus('permission_denied');
+        setStatus('permission_denied');
+      } else if (message.startsWith('BT_NOT_READY:')) {
+        setBluetoothOffModalVisible(true);
+        setStatus('bluetooth_off');
       } else {
-        safeSetStatus('error');
-        addLog({
-          level:   'error',
-          message: friendlyError(msg),
-          time:    new Date().toLocaleTimeString(),
-        });
+        setStatus('error');
       }
-    }
-  }, [status, safeSetStatus, addLog, beginScan]);
 
-  // ── Disconnect ─────────────────────────────────────────────────────────
+      handleError(message);
+    }
+  }, [addLog, handleData, handleError, status]);
+
   const disconnect = useCallback(async () => {
     connectIntentRef.current = false;
     await AsyncStorage.removeItem(BLE_CONNECT_INTENT_KEY);
     await bleService.disconnect();
-    if (isMounted.current) {
-      setStatus('idle');
-      addLog({ level: 'info', message: 'Session ended by user.', time: new Date().toLocaleTimeString() });
-    }
+    if (!isMounted.current) return;
+    setStatus('idle');
+    addLog({
+      level: 'info',
+      message: 'BLE session ended.',
+      time: new Date().toLocaleTimeString(),
+    });
   }, [addLog]);
 
-  // ── Retry after permission denial ──────────────────────────────────────
   const retryPermission = useCallback(async () => {
     setPermissionDenied(false);
     await connect();
@@ -243,13 +201,17 @@ export function useBLE(): UseBLEReturn {
     connectIntentRef.current = false;
     setBluetoothOffModalVisible(false);
     await AsyncStorage.removeItem(BLE_CONNECT_INTENT_KEY);
-    safeSetStatus('idle');
-  }, [safeSetStatus]);
+    setStatus('idle');
+  }, []);
+
+  const latestPayload = useMemo(() => soilData, [soilData]);
 
   return {
     status,
     bluetoothState,
     soilData,
+    latestPayload,
+    latestError,
     logs,
     permissionDenied,
     bluetoothOffModalVisible,

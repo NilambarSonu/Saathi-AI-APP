@@ -10,6 +10,13 @@ module.exports = ({ config }) => {
     ...config,
     ios: {
       ...(config.ios || {}),
+      infoPlist: {
+        ...((config.ios && config.ios.infoPlist) || {}),
+        NSBluetoothAlwaysUsageDescription:
+          'Saathi AI uses Bluetooth to scan, connect, and read soil data from your Agni device.',
+        NSBluetoothPeripheralUsageDescription:
+          'Saathi AI uses Bluetooth to communicate with your Agni soil sensor.',
+      },
       config: {
         ...((config.ios && config.ios.config) || {}),
         googleMapsApiKey,
@@ -17,6 +24,16 @@ module.exports = ({ config }) => {
     },
     android: {
       ...(config.android || {}),
+      permissions: Array.from(
+        new Set([
+          ...(((config.android && config.android.permissions) || [])),
+          'BLUETOOTH',
+          'BLUETOOTH_ADMIN',
+          'BLUETOOTH_SCAN',
+          'BLUETOOTH_CONNECT',
+          'ACCESS_FINE_LOCATION',
+        ])
+      ),
       intentFilters: [
         {
           "action": "VIEW",

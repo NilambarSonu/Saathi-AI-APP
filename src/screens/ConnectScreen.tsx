@@ -1,9 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { hideTabBar, showTabBar } from '../../constants/Animations';
 import {
   View, Text, TouchableOpacity, StyleSheet, Pressable,
-  ScrollView, SafeAreaView, Dimensions, Linking,
+  ScrollView, SafeAreaView, Dimensions,
+  Linking,
 } from 'react-native';
+import type { State as BleState } from 'react-native-ble-plx';
 import { MaterialCommunityIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';
@@ -25,7 +27,6 @@ import Animated, {
 import { useBLE } from '../../src/features/hardware_ble/hooks/useBLE';
 import { sendSoilDataToPipeline } from '../../src/features/soil_analysis/services/soil';
 import { useSoilMarkers } from '../../context/SoilMarkersContext';
-import type { State as BleState } from 'react-native-ble-plx';
 
 
 const { width } = Dimensions.get('window');
@@ -356,8 +357,9 @@ function QuickStartView() {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ConnectScreen() {
   const {
-    status, bluetoothState, soilData, logs,
-    permissionDenied, connect, disconnect, retryPermission,
+    status, bluetoothState, soilData, latestError, logs,
+    permissionDenied, bluetoothOffModalVisible, connect, disconnect, retryPermission,
+    openBluetoothSettings, cancelBluetoothPrompt,
   } = useBLE();
 
   const { addSoilMarker } = useSoilMarkers();
@@ -368,38 +370,10 @@ export default function ConnectScreen() {
   const [pipelineLoading, setPipelineLoading] = useState(false);
   const [pipelineStage, setPipelineStage] = useState('');
   const [pipelineMessage, setPipelineMessage] = useState<string | null>(null);
-  const [showBluetoothSheet, setShowBluetoothSheet] = useState(false);
-  const [bluetoothSheetDismissed, setBluetoothSheetDismissed] = useState(false);
-  const lastBtStateRef = useRef<BleState | null>(null);
 
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.idle;
   const isBusy = status === 'scanning' || status === 'connecting' || status === 'transferring';
   const isConnected = status === 'connected' || status === 'transferring' || status === 'complete';
-
-  useEffect(() => {
-    const btOff = bluetoothState === 'PoweredOff' || status === 'bluetooth_off';
-
-    if (btOff && !bluetoothSheetDismissed) {
-      setShowBluetoothSheet(true);
-    }
-
-    if (bluetoothState === 'PoweredOn' && lastBtStateRef.current !== 'PoweredOn') {
-      setShowBluetoothSheet(false);
-      setBluetoothSheetDismissed(false);
-    }
-
-    lastBtStateRef.current = bluetoothState;
-  }, [bluetoothState, status, bluetoothSheetDismissed]);
-
-  const openBluetoothSettings = () => {
-    setShowBluetoothSheet(false);
-    Linking.openSettings();
-  };
-
-  const onCancelBluetoothSheet = () => {
-    setBluetoothSheetDismissed(true);
-    setShowBluetoothSheet(false);
-  };
 
   const handlePress = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -531,6 +505,13 @@ export default function ConnectScreen() {
           </Animated.View>
         )}
 
+        {!permissionDenied && latestError && (
+          <Animated.View entering={FadeInDown.duration(300)} style={s.inlineErrorBanner}>
+            <Ionicons name="warning-outline" size={20} color="#B91C1C" />
+            <Text style={s.inlineErrorText}>{latestError}</Text>
+          </Animated.View>
+        )}
+
         {/* ── HERO ── */}
         <View style={s.heroContainer}>
           <View style={[s.radarCircle, isConnected && s.radarCircleActive]}>
@@ -622,19 +603,19 @@ export default function ConnectScreen() {
 
         </ScrollView>
 
-        {showBluetoothSheet && (
+        {bluetoothOffModalVisible && (
           <View style={s.sheetOverlay} pointerEvents="box-none">
-            <Pressable style={s.sheetBackdrop} onPress={onCancelBluetoothSheet} />
+            <Pressable style={s.sheetBackdrop} onPress={cancelBluetoothPrompt} />
             <View style={s.bluetoothSheet}>
               <Text style={s.sheetTitle}>Bluetooth is OFF</Text>
               <Text style={s.sheetBody}>Turn on Bluetooth to scan devices</Text>
 
               <View style={s.sheetActions}>
-                <TouchableOpacity onPress={onCancelBluetoothSheet} style={s.sheetCancelBtn}>
+                <TouchableOpacity onPress={cancelBluetoothPrompt} style={s.sheetCancelBtn}>
                   <Text style={s.sheetCancelText}>Cancel</Text>
                 </TouchableOpacity>
 
-                <TouchableOpacity onPress={openBluetoothSettings} style={s.sheetPrimaryBtn}>
+                <TouchableOpacity onPress={() => void openBluetoothSettings()} style={s.sheetPrimaryBtn}>
                   <Text style={s.sheetPrimaryText}>Turn ON</Text>
                 </TouchableOpacity>
               </View>
@@ -668,6 +649,23 @@ const s = StyleSheet.create({
   alertTitle: { fontFamily: 'Sora_700Bold', fontSize: 14, color: '#991B1B', marginBottom: 2 },
   alertBody:  { fontFamily: 'Sora_400Regular', fontSize: 13, color: '#7F1D1D', lineHeight: 18 },
   alertAction:{ fontFamily: 'Sora_600SemiBold', fontSize: 13, color: '#D97706', marginTop: 6 },
+  inlineErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  inlineErrorText: {
+    flex: 1,
+    fontFamily: 'Sora_500Medium',
+    fontSize: 12,
+    color: '#991B1B',
+    lineHeight: 18,
+  },
 
   heroContainer: { alignItems: 'center', marginVertical: 30 },
   radarCircle:      { width: 260, height: 260, borderRadius: 130, backgroundColor: 'transparent', alignItems: 'center', justifyContent: 'center' },

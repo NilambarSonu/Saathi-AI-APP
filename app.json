@@ -17,8 +17,8 @@
       "bundleIdentifier": "org.saathiai.app",
       "buildNumber": "1",
       "infoPlist": {
-        "NSBluetoothAlwaysUsageDescription": "Saathi AI needs Bluetooth to connect to your Agni soil sensor device.",
-        "NSBluetoothPeripheralUsageDescription": "Saathi AI uses Bluetooth to receive soil analysis data from Agni.",
+        "NSBluetoothAlwaysUsageDescription": "Saathi AI uses Bluetooth to scan, connect, and read soil data from your Agni device.",
+        "NSBluetoothPeripheralUsageDescription": "Saathi AI uses Bluetooth to communicate with your Agni soil sensor.",
         "NSLocationWhenInUseUsageDescription": "Saathi AI uses your location to tag soil test results to specific field coordinates.",
         "NSMicrophoneUsageDescription": "Saathi AI uses the microphone for voice queries to the AI assistant."
       },

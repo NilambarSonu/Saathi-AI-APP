@@ -1,114 +1,146 @@
-/**
- * services/bleService.ts  (v2 — Production-grade)
- *
- * Enhancements over v1:
- *  1.  Bluetooth state listener  — detects BT OFF, blocks scanning
- *  2.  Permission denial handler — throws structured error, guides user to Settings
- *  3.  Device filtering          — service UUID first, name/localName fallback
- *  4.  RSSI filtering            — reject signals weaker than -70 dBm
- *  5.  Scan deduplication        — `isScanning` flag prevents overlapping scans
- *  6.  Subscription cleanup      — `Subscription.remove()` always called on disconnect
- *  7.  AppState handling         — pauses scan/listen when app is backgrounded
- *  8.  JSON validation           — schema-checks parsed soil data before use
- *  9.  MTU negotiation with fallback — tries 512, logs and continues if rejected
- * 10.  Transfer watchdog         — 10 s timer resets buffer if FILE_END never arrives
- */
-
-import { Platform, PermissionsAndroid, AppState, type AppStateStatus, NativeModules } from 'react-native';
-import Constants from 'expo-constants';
-import type {
-  BleManager as BleManagerType,
+import { AppState, PermissionsAndroid, Platform, type AppStateStatus } from 'react-native';
+import {
+  BleError,
+  BleManager,
+  Characteristic,
   Device,
-  Subscription,
-  State as BleState,
+  type State as BleState,
+  type Subscription,
 } from 'react-native-ble-plx';
-import { saveSoilRecord, SoilData } from '../../../../database/datastorage';
+import { Buffer } from 'buffer';
+import { saveSoilRecord, type SoilData } from '../../../../database/datastorage';
 
-// Legacy react-native-ble-manager removed
+const DEVICE_NAME_KEYWORD = 'AGNI';
+const SCAN_TIMEOUT_MS = 12_000;
+const CONNECT_TIMEOUT_MS = 15_000;
+const READ_TIMEOUT_MS = 12_000;
+const AGNI_PROTOCOL = {
+  serviceUuid: 'REPLACE_ME',
+  writeCharacteristicUuid: 'REPLACE_ME',
+  notifyCharacteristicUuid: 'REPLACE_ME',
+  command: 'REPLACE_ME',
+  commandEncoding: 'text' as 'text' | 'hex',
+  responseFormat: 'REPLACE_ME',
+};
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-const DEVICE_NAME_KEYWORD = 'AGNI';                              // Enhancement 3
-const SERVICE_UUID        = '12345678-1234-1234-1234-123456789abc';
-const CHARACTERISTIC_UUID = 'abcdef12-3456-7890-1234-567890abcdef';
-const SCAN_TIMEOUT_MS     = 15_000;
-const TRANSFER_TIMEOUT_MS = 10_000;                              // Enhancement 10
-const MIN_RSSI            = -70;                                 // Enhancement 4
-const MAX_RECONNECT       = 3;
-const RECONNECT_BASE_MS   = 1_500;
-
-// ─── Lazy BLE class loader ─────────────────────────────────────────────────────
-let BleManagerClass: (new () => BleManagerType) | null = null;
-try {
-  BleManagerClass = require('react-native-ble-plx').BleManager ?? null;
-} catch {
-  console.warn('[BLE] react-native-ble-plx native module unavailable.');
+function normalizeUuid(value: string): string {
+  return value.trim().toLowerCase();
 }
 
-function isBLESupported(): boolean {
-  if (Platform.OS !== 'android' && Platform.OS !== 'ios') return false;
-  if (Constants.appOwnership === 'expo') return false;
-  return BleManagerClass !== null;
+function isPlaceholder(value: string): boolean {
+  return !value || value.includes('REPLACE_ME');
 }
 
-// ─── Base64 → UTF-8 decoder ──────────────────────────────────────────────────
+function ensureProtocolConfigured(): void {
+  if (
+    isPlaceholder(AGNI_PROTOCOL.serviceUuid) ||
+    isPlaceholder(AGNI_PROTOCOL.writeCharacteristicUuid) ||
+    isPlaceholder(AGNI_PROTOCOL.notifyCharacteristicUuid) ||
+    isPlaceholder(AGNI_PROTOCOL.command) ||
+    isPlaceholder(AGNI_PROTOCOL.responseFormat)
+  ) {
+    throw new Error('BLE_PROTOCOL_GAP: Update Agni BLE UUIDs, command, and response format placeholders.');
+  }
+}
+
+function toBase64Command(command: string, encoding: 'text' | 'hex'): string {
+  if (encoding === 'hex') {
+    const normalized = command.replace(/\s+/g, '');
+    if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
+      throw new Error('INVALID_BLE_COMMAND: Hex command must contain an even number of hex characters.');
+    }
+    return Buffer.from(normalized, 'hex').toString('base64');
+  }
+
+  return Buffer.from(command, 'utf8').toString('base64');
+}
+
 function decodeBase64(value: string): string {
   try {
-    if (typeof atob === 'function') return decodeURIComponent(escape(atob(value)));
-    const { Buffer } = require('buffer');
-    return Buffer.from(value, 'base64').toString('utf-8');
+    return Buffer.from(value, 'base64').toString('utf8');
   } catch {
     return '';
   }
 }
 
-// ─── JSON → SoilData mapper + validator (Enhancement 8) ─────────────────────
-function validateAndMapSoilData(raw: unknown): SoilData {
-  if (!raw || typeof raw !== 'object') throw new Error('Not an object');
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
 
-  const obj = raw as Record<string, any>;
+function normalizeNumeric(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
 
-  // Require these top-level keys
-  if (!obj.parameters || typeof obj.parameters !== 'object')
-    throw new Error('Missing "parameters" block');
-  if (!obj.timestamp || typeof obj.timestamp !== 'string')
-    throw new Error('Missing "timestamp"');
-  if (!obj.location || typeof obj.location !== 'object')
-    throw new Error('Missing "location" block');
+function parseSoilPayload(rawPayload: string): SoilData {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(rawPayload);
+  } catch {
+    throw new Error('BLE_PARSE_ERROR: Device response was not valid JSON.');
+  }
 
-  const p   = obj.parameters as Record<string, any>;
-  const loc = obj.location   as Record<string, any>;
+  const metrics = parsed?.metrics ?? parsed?.parameters ?? parsed;
+  const location = parsed?.location ?? {};
 
-  const toNum = (v: any): number =>
-    v === undefined || v === null || v === '' ? 0 : Number(v);
-
-  const mapped: SoilData = {
-    temp:        toNum(p.temperature),
-    moisture:    toNum(p.moisture),
-    nitrogen:    toNum(p.nitrogen),
-    phosphorus:  toNum(p.phosphorus),
-    potassium:   toNum(p.potassium),
-    ph:          toNum(p.ph_value),
-    conductivity:toNum(p.conductivity),
-    timestamp:   obj.timestamp,
+  const soilData: SoilData = {
+    temp: normalizeNumeric(metrics?.temperature ?? metrics?.temp ?? parsed?.temperature),
+    moisture: normalizeNumeric(metrics?.moisture ?? parsed?.moisture),
+    nitrogen: normalizeNumeric(metrics?.nitrogen ?? metrics?.n ?? parsed?.nitrogen),
+    phosphorus: normalizeNumeric(metrics?.phosphorus ?? metrics?.p ?? parsed?.phosphorus),
+    potassium: normalizeNumeric(metrics?.potassium ?? metrics?.k ?? parsed?.potassium),
+    ph: normalizeNumeric(metrics?.ph ?? metrics?.pH ?? parsed?.ph),
+    conductivity: normalizeNumeric(
+      metrics?.conductivity ?? metrics?.ec ?? parsed?.conductivity ?? parsed?.ec
+    ),
+    timestamp:
+      typeof parsed?.timestamp === 'string' && parsed.timestamp.trim().length > 0
+        ? parsed.timestamp
+        : new Date().toISOString(),
     location: {
-      latitude:  toNum(loc.latitude),
-      longitude: toNum(loc.longitude),
+      latitude: normalizeNumeric(location?.latitude ?? parsed?.latitude),
+      longitude: normalizeNumeric(location?.longitude ?? parsed?.longitude),
     },
   };
 
-  // Require at least one positive sensor reading
-  const readings = [mapped.temp, mapped.moisture, mapped.nitrogen,
-                    mapped.phosphorus, mapped.potassium, mapped.ph, mapped.conductivity];
-  if (!readings.some(v => !isNaN(v) && v > 0))
-    throw new Error('All sensor readings are zero — likely corrupted packet');
+  const hasAnySignal = [
+    soilData.temp,
+    soilData.moisture,
+    soilData.nitrogen,
+    soilData.phosphorus,
+    soilData.potassium,
+    soilData.ph,
+    soilData.conductivity,
+  ].some((value) => value !== 0);
 
-  return mapped;
+  if (!hasAnySignal) {
+    throw new Error('BLE_PARSE_ERROR: Parsed payload did not contain usable soil readings.');
+  }
+
+  return soilData;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 export type BLEStatus =
-  | 'idle' | 'scanning' | 'connecting' | 'connected'
-  | 'transferring' | 'complete' | 'error' | 'bluetooth_off' | 'permission_denied';
+  | 'idle'
+  | 'scanning'
+  | 'connecting'
+  | 'connected'
+  | 'transferring'
+  | 'complete'
+  | 'error'
+  | 'bluetooth_off'
+  | 'permission_denied';
 
 export type LogLevel = 'info' | 'warn' | 'error';
 
@@ -118,510 +150,395 @@ export type LogEntry = {
   time: string;
 };
 
+export interface AgniBlePayload extends SoilData {
+  rawPayload: string;
+  deviceId: string;
+}
+
 export type BLECallbacks = {
-  onStatusChange:    (status: BLEStatus) => void;
-  onLog:             (entry: LogEntry) => void;
-  onData:            (data: SoilData) => void;
+  onStatusChange: (status: BLEStatus) => void;
+  onLog: (entry: LogEntry) => void;
+  onData: (data: AgniBlePayload) => void;
   onBluetoothState?: (state: BleState) => void;
+  onError?: (message: string) => void;
 };
 
-// ─── BLEService Class ─────────────────────────────────────────────────────────
 class BLEService {
-  private _manager:            BleManagerType | null = null;
-  private _device:             Device | null = null;
-  private _charSubscription:   Subscription | null = null;
-  private _btStateSubscription:Subscription | null = null;
-  private _appStateListener:   ReturnType<typeof AppState.addEventListener> | null = null;
+  private manager = new BleManager();
+  private device: Device | null = null;
+  private notifySubscription: Subscription | null = null;
+  private bluetoothSubscription: Subscription | null = null;
+  private appStateSubscription: ReturnType<typeof AppState.addEventListener> | null = null;
+  private callbacks: BLECallbacks | null = null;
+  private scanTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingResponseTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanResolver: ((device: Device) => void) | null = null;
+  private scanRejecter: ((reason?: unknown) => void) | null = null;
+  private lastSeenDevices = new Set<string>();
+  private activeAppState: AppStateStatus = AppState.currentState;
+  private latestPayload: AgniBlePayload | null = null;
+  private latestError: string | null = null;
+  private currentStatus: BLEStatus = 'idle';
+  private currentBluetoothState: BleState | null = null;
+  private currentWriteCharacteristic: Characteristic | null = null;
+  private currentNotifyCharacteristic: Characteristic | null = null;
 
-  private _buffer            = '';
-  private _transferTimer:    ReturnType<typeof setTimeout> | null = null;
-  private _reconnectAttempts = 0;
-  private _isClosing         = false;
-  private _transferCount     = 0;
-  private _callbacks:        BLECallbacks | null = null;
-  private _lastBtState:      BleState | null = null;
-
-  // Enhancement 5 — scan dedup
-  private _isScanning = false;
-
-  // Enhancement 7 — app state
-  private _appState: AppStateStatus = 'active';
-
-  // ── Lazy manager ────────────────────────────────────────────────────────
-  private _getManager(): BleManagerType | null {
-    if (!isBLESupported()) {
-      this._log('warn', Constants.appOwnership === 'expo'
-        ? 'Bluetooth unavailable in Expo Go. Please use the Saathi AI dev build or APK.'
-        : 'Bluetooth is not supported in this environment.');
-      return null;
-    }
-    if (!this._manager) {
-      try {
-        this._manager = new BleManagerClass!();
-      } catch (e: any) {
-        this._log('error', `BLE init failed: ${e?.message ?? 'unknown'}`);
-        return null;
-      }
-    }
-    return this._manager;
+  get isConnected(): boolean {
+    return this.device !== null;
   }
 
-  // ── Structured logging ───────────────────────────────────────────────────
-  private _log(level: LogLevel, message: string) {
+  get isScanning(): boolean {
+    return this.scanResolver !== null;
+  }
+
+  get latestSoilPayload(): AgniBlePayload | null {
+    return this.latestPayload;
+  }
+
+  get latestFailure(): string | null {
+    return this.latestError;
+  }
+
+  private emitLog(level: LogLevel, message: string): void {
     const entry: LogEntry = {
       level,
       message,
       time: new Date().toLocaleTimeString(),
     };
-    console[level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log'](`[BLE][${level.toUpperCase()}] ${message}`);
-    this._callbacks?.onLog(entry);
+
+    this.callbacks?.onLog(entry);
+    if (level === 'error') {
+      this.latestError = message;
+      this.callbacks?.onError?.(message);
+    }
   }
 
-  private _setStatus(s: BLEStatus) {
-    this._callbacks?.onStatusChange(s);
+  private setStatus(status: BLEStatus): void {
+    this.currentStatus = status;
+    this.callbacks?.onStatusChange(status);
   }
 
-  // ── Enhancement 1: Bluetooth state listener ──────────────────────────────
+  private resetResponseTimer(): void {
+    if (this.pendingResponseTimer) {
+      clearTimeout(this.pendingResponseTimer);
+    }
+
+    this.pendingResponseTimer = setTimeout(() => {
+      this.emitLog('warn', 'BLE read timed out waiting for Agni response.');
+      this.setStatus('error');
+    }, READ_TIMEOUT_MS);
+  }
+
+  private clearResponseTimer(): void {
+    if (this.pendingResponseTimer) {
+      clearTimeout(this.pendingResponseTimer);
+      this.pendingResponseTimer = null;
+    }
+  }
+
   startBluetoothStateWatcher(callbacks: BLECallbacks): void {
-    this._callbacks = callbacks;
-    const m = this._getManager();
-    if (!m) return;
+    this.callbacks = callbacks;
+    this.bluetoothSubscription?.remove();
+    this.bluetoothSubscription = this.manager.onStateChange((state) => {
+      this.currentBluetoothState = state;
+      this.callbacks?.onBluetoothState?.(state);
 
-    // Remove previous state subscription if any
-    this._btStateSubscription?.remove();
-
-    this._btStateSubscription = m.onStateChange((state) => {
-      if (this._lastBtState !== state) {
-        this._lastBtState = state;
-        this._log('info', `Bluetooth state: ${state}`);
+      if (state !== 'PoweredOn' && this.currentStatus !== 'permission_denied') {
+        this.setStatus('bluetooth_off');
       }
-      callbacks.onBluetoothState?.(state);
-    }, true /* emit current state immediately */);
+    }, true);
+
+    this.registerAppStateListener();
+  }
+
+  private registerAppStateListener(): void {
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      this.activeAppState = nextState;
+      if (nextState !== 'active' && this.isScanning) {
+        this.stopScan('App moved to background. Scan stopped safely.');
+      }
+    });
+  }
+
+  async getBluetoothState(): Promise<BleState> {
+    const state = await this.manager.state();
+    this.currentBluetoothState = state;
+    return state;
   }
 
   async isBluetoothPoweredOn(): Promise<boolean> {
     return (await this.getBluetoothState()) === 'PoweredOn';
   }
 
-  async getBluetoothState(): Promise<BleState | null> {
-    const m = this._getManager();
-    if (!m) return null;
-
-    try {
-      return await m.state();
-    } catch {
-      return null;
-    }
-  }
-
-  // ── Enhancement 2: Android permissions with denial handling ─────────────
   async requestAndroidPermissions(): Promise<void> {
     if (Platform.OS !== 'android') return;
 
-    const permissions = [
-      PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-      PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-      PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-    ].filter(Boolean) as string[];
+    const sdkVersion = typeof Platform.Version === 'number' ? Platform.Version : Number(Platform.Version);
+    const permissions =
+      sdkVersion >= 31
+        ? [
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
+            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          ]
+        : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
 
     const results = await PermissionsAndroid.requestMultiple(permissions);
-
-    const denied = Object.entries(results)
-      .filter(([, r]) => r !== PermissionsAndroid.RESULTS.GRANTED)
-      .map(([perm]) => perm.split('.').pop());
+    const denied = permissions.filter(
+      (permission) => results[permission] !== PermissionsAndroid.RESULTS.GRANTED
+    );
 
     if (denied.length > 0) {
-      const names = denied.join(', ');
-      this._log('error', `Permission denied: ${names}. Go to Settings → Apps → Saathi AI → Permissions.`);
-      throw new Error(`PERMISSION_DENIED:${names}`);
+      this.setStatus('permission_denied');
+      throw new Error(`PERMISSION_DENIED:${denied.join(',')}`);
     }
-
-    this._log('info', 'All Bluetooth permissions granted ✓');
   }
 
-  // ── Enhancement 3+4+5: Scan & Connect ────────────────────────────────────
-  async scanAndConnect(callbacks: BLECallbacks): Promise<Device> {
-    this._callbacks = callbacks;
+  private matchesTargetDevice(device: Device): boolean {
+    const advertised = (device.serviceUUIDs || []).map(normalizeUuid);
+    const targetService = normalizeUuid(AGNI_PROTOCOL.serviceUuid);
+    const hasService = !isPlaceholder(AGNI_PROTOCOL.serviceUuid) && advertised.includes(targetService);
+    const hasName =
+      device.name?.toUpperCase().includes(DEVICE_NAME_KEYWORD) ||
+      device.localName?.toUpperCase().includes(DEVICE_NAME_KEYWORD);
 
-    // Enhancement 5 — prevent duplicate scans
-    if (this._isScanning) {
-      this._log('warn', 'Scan already in progress. Ignoring duplicate call.');
+    return Boolean(hasService || hasName);
+  }
+
+  private clearScanState(): void {
+    if (this.scanTimer) {
+      clearTimeout(this.scanTimer);
+      this.scanTimer = null;
+    }
+    this.scanResolver = null;
+    this.scanRejecter = null;
+  }
+
+  async scanForDevice(): Promise<Device> {
+    const state = await this.getBluetoothState();
+    if (state !== 'PoweredOn') {
+      this.setStatus('bluetooth_off');
+      throw new Error('BT_NOT_READY: Bluetooth is turned off.');
+    }
+
+    if (this.isScanning) {
       throw new Error('SCAN_IN_PROGRESS');
     }
 
-    const m = this._getManager();
-    if (!m) throw new Error('BLE not available in this environment.');
+    this.setStatus('scanning');
+    this.lastSeenDevices.clear();
 
-    // Check Bluetooth is ON before scanning
-    let currentState = await this.getBluetoothState();
-    if (currentState !== 'PoweredOn') {
-      if (Platform.OS === 'android') {
-        try {
-          this._log('info', 'Bluetooth is OFF. Prompting system popup to enable...');
-          const { BluetoothManager } = NativeModules;
-          
-          // Request system dialog
-          if (BluetoothManager && BluetoothManager.enableBluetooth) {
-            await BluetoothManager.enableBluetooth();
-          } else {
-            // Fallback for when NativeModules isn't accessible
-            await m.enable();
-          }
+    return new Promise<Device>((resolve, reject) => {
+      this.scanResolver = resolve;
+      this.scanRejecter = reject;
 
-          // Delay slightly to ensure hardware state updates
-          await new Promise(r => setTimeout(r, 1500));
-          currentState = await this.getBluetoothState();
-
-          if (currentState !== 'PoweredOn') {
-            // Re-read once after delay if state takes longer to reflect
-            throw new Error(`BT_NOT_READY:${currentState}`);
-          }
-        } catch (err: any) {
-          throw new Error('BT_NOT_READY:User denied Bluetooth permissions to turn on.');
-        }
-      } else {
-        throw new Error(`BT_NOT_READY:${currentState}`);
-      }
-    }
-
-    // Safety: stop any lingering scan
-    try { m.stopDeviceScan(); } catch { /* ignore */ }
-
-    this._isScanning = true;
-    this._setStatus('scanning');
-    this._log('info', `Scanning for "${DEVICE_NAME_KEYWORD}" device…`);
-
-    return new Promise((resolve, reject) => {
-      const scanTimer = setTimeout(() => {
-        m.stopDeviceScan();
-        this._isScanning = false;
-        this._setStatus('error');
-        reject(new Error('SCAN_TIMEOUT:Device not found within 15 seconds. Ensure the Agni sensor is nearby & powered on.'));
+      this.scanTimer = setTimeout(() => {
+        this.stopScan();
+        reject(new Error('SCAN_TIMEOUT: No Agni device found within scan timeout.'));
       }, SCAN_TIMEOUT_MS);
 
-      // Enhancement 3: scan for our service UUID; the manager filters at protocol level
-      m.startDeviceScan(
-        null,
-        null,
-        async (error, device) => {
-          if (error) {
-            clearTimeout(scanTimer);
-            m.stopDeviceScan();
-            this._isScanning = false;
-            this._setStatus('error');
-            reject(error);
-            return;
-          }
-
-          if (!device) return;
-
-          if (device.name) {
-            console.log(device.name);
-          }
-
-          // Enhancement 3 fallback: also match by name/localName
-          const nameMatch =
-            device.name?.toUpperCase().includes(DEVICE_NAME_KEYWORD) ||
-            device.localName?.toUpperCase().includes(DEVICE_NAME_KEYWORD);
-
-          // If service UUID scan returned it, great; also accept by name
-          if (!nameMatch) return;
-
-          // Enhancement 4: RSSI filter
-          if (device.rssi !== null && device.rssi < MIN_RSSI) {
-            this._log('warn', `Skipping "${device.name}" — RSSI ${device.rssi} dBm too weak (< ${MIN_RSSI}).`);
-            return;
-          }
-
-          // ── Device accepted ──
-          clearTimeout(scanTimer);
-          m.stopDeviceScan();
-          this._isScanning = false;
-          this._log('info', `Found "${device.name}" (RSSI: ${device.rssi} dBm). Connecting…`);
-          this._setStatus('connecting');
-
-          try {
-            let connected = await device.connect({ autoConnect: false });
-            this._log('info', 'Discovering services & characteristics…');
-            connected = await connected.discoverAllServicesAndCharacteristics();
-
-            // Enhancement 9: MTU negotiation with fallback
-            try {
-              await connected.requestMTU(512);
-              this._log('info', 'MTU negotiated: 512 bytes ✓');
-            } catch {
-              this._log('warn', 'MTU 512 rejected — using device default MTU.');
-            }
-
-            this._device = connected;
-            this._reconnectAttempts = 0;
-
-            // Unexpected disconnect watcher
-            connected.onDisconnected((_err) => {
-              if (!this._isClosing) {
-                this._log('warn', 'Device disconnected unexpectedly. Attempting auto-reconnect…');
-                this._handleDisconnect();
-              }
-            });
-
-            // Enhancement 7: AppState listener
-            this._registerAppStateListener();
-
-            this._setStatus('connected');
-            this._log('info', 'Connected to AGNI-SOIL-SENSOR ✓');
-            resolve(connected);
-
-          } catch (connErr: any) {
-            this._isScanning = false;
-            this._setStatus('error');
-            reject(connErr);
-          }
+      this.manager.startDeviceScan(null, { allowDuplicates: false }, (error, device) => {
+        if (error) {
+          this.stopScan();
+          reject(error);
+          return;
         }
-      );
+
+        if (!device || !this.matchesTargetDevice(device)) return;
+        if (this.lastSeenDevices.has(device.id)) return;
+
+        this.lastSeenDevices.add(device.id);
+        this.stopScan();
+        resolve(device);
+      });
     });
   }
 
-  // ── Enhancement 6+10: Start Listening ─────────────────────────────────────
-  startListening(): void {
-    if (!this._device) {
-      this._log('error', 'Cannot start listening — no device connected.');
-      return;
+  stopScan(reason?: string): void {
+    try {
+      this.manager.stopDeviceScan();
+    } catch {
+      // no-op
+    }
+    this.clearScanState();
+    if (reason) {
+      this.emitLog('info', reason);
+    }
+  }
+
+  private async discoverProtocolCharacteristics(device: Device): Promise<void> {
+    ensureProtocolConfigured();
+
+    const services = await device.services();
+    const service = services.find(
+      (item) => normalizeUuid(item.uuid) === normalizeUuid(AGNI_PROTOCOL.serviceUuid)
+    );
+
+    if (!service) {
+      throw new Error('BLE_PROTOCOL_GAP: Agni service UUID not found on connected device.');
     }
 
-    this._buffer = '';
-    this._transferCount = 0;
-    this._isClosing = false;
+    const characteristics = await service.characteristics();
+    this.currentWriteCharacteristic =
+      characteristics.find(
+        (item) =>
+          normalizeUuid(item.uuid) === normalizeUuid(AGNI_PROTOCOL.writeCharacteristicUuid)
+      ) || null;
+    this.currentNotifyCharacteristic =
+      characteristics.find(
+        (item) =>
+          normalizeUuid(item.uuid) === normalizeUuid(AGNI_PROTOCOL.notifyCharacteristicUuid)
+      ) || null;
 
-    // Enhancement 6: always remove previous subscription before creating a new one
-    this._charSubscription?.remove();
-    this._charSubscription = null;
+    if (!this.currentWriteCharacteristic || !this.currentNotifyCharacteristic) {
+      throw new Error('BLE_PROTOCOL_GAP: Required Agni characteristics were not found.');
+    }
+  }
 
-    this._log('info', 'Monitoring characteristic for soil data…');
-    this._setStatus('transferring');
+  async connectToDevice(device: Device): Promise<Device> {
+    this.setStatus('connecting');
+    this.emitLog('info', `Connecting to ${device.name || device.localName || device.id}...`);
 
-    this._charSubscription = this._device.monitorCharacteristicForService(
-      SERVICE_UUID,
-      CHARACTERISTIC_UUID,
-      (error, characteristic) => {
-        if (this._isClosing) return;
-        if (this._appState !== 'active') return; // Enhancement 7
+    const connected = await withTimeout(
+      device.connect({ autoConnect: false }).then((result) => result.discoverAllServicesAndCharacteristics()),
+      CONNECT_TIMEOUT_MS,
+      'CONNECT_TIMEOUT: Agni connection timed out.'
+    );
 
+    this.device = connected;
+    await this.discoverProtocolCharacteristics(connected);
+    connected.onDisconnected((error) => {
+      if (error) {
+        this.emitLog('warn', `Disconnected: ${error.message}`);
+      }
+
+      this.device = null;
+      this.currentWriteCharacteristic = null;
+      this.currentNotifyCharacteristic = null;
+      this.notifySubscription?.remove();
+      this.notifySubscription = null;
+
+      if (this.activeAppState === 'active') {
+        this.emitLog('warn', 'BLE connection dropped. Tap retry to reconnect.');
+        this.setStatus('error');
+      } else {
+        this.setStatus('idle');
+      }
+    });
+
+    this.setStatus('connected');
+    this.emitLog('info', 'Agni connected and services discovered.');
+    return connected;
+  }
+
+  async subscribeToResponses(): Promise<void> {
+    if (!this.device || !this.currentNotifyCharacteristic) {
+      throw new Error('BLE_NOT_READY: No notify/read characteristic available.');
+    }
+
+    this.notifySubscription?.remove();
+    this.notifySubscription = this.device.monitorCharacteristicForService(
+      AGNI_PROTOCOL.serviceUuid,
+      AGNI_PROTOCOL.notifyCharacteristicUuid,
+      async (error: BleError | null, characteristic: Characteristic | null) => {
         if (error) {
-          this._log('error', `Monitor error: ${error.message}`);
-          this._handleDisconnect();
+          this.emitLog('error', `BLE monitor error: ${error.message}`);
+          this.setStatus('error');
           return;
         }
 
         if (!characteristic?.value) return;
 
-        const chunk = decodeBase64(characteristic.value);
-        this._processChunk(chunk);
+        this.clearResponseTimer();
+        try {
+          const rawPayload = decodeBase64(characteristic.value);
+          const soilData = parseSoilPayload(rawPayload);
+          const payload: AgniBlePayload = {
+            ...soilData,
+            rawPayload,
+            deviceId: this.device?.id || 'AGNI-SOIL-SENSOR',
+          };
+
+          this.latestPayload = payload;
+          await saveSoilRecord(soilData).catch(() => {});
+          this.callbacks?.onData(payload);
+          this.emitLog('info', 'Soil data received from Agni.');
+          this.setStatus('complete');
+        } catch (parseError: any) {
+          this.emitLog('error', parseError?.message || 'Failed to parse BLE payload.');
+          this.setStatus('error');
+        }
       }
     );
   }
 
-  // ── Enhancement 10: Transfer watchdog ─────────────────────────────────────
-  private _startTransferTimer(): void {
-    this._clearTransferTimer();
-    this._transferTimer = setTimeout(() => {
-      this._log('warn', `Transfer watchdog: FILE_END not received in ${TRANSFER_TIMEOUT_MS / 1000}s. Resetting buffer.`);
-      this._buffer = '';
-    }, TRANSFER_TIMEOUT_MS);
-  }
+  async requestSoilReading(): Promise<void> {
+    ensureProtocolConfigured();
 
-  private _clearTransferTimer(): void {
-    if (this._transferTimer) {
-      clearTimeout(this._transferTimer);
-      this._transferTimer = null;
-    }
-  }
-
-  // ── Chunk processor ────────────────────────────────────────────────────────
-  private _processChunk(chunk: string): void {
-    try {
-      if (chunk.startsWith('FILE_START')) {
-        this._buffer = '';
-        this._log('info', 'File transfer started — buffer cleared.');
-        this._startTransferTimer(); // Enhancement 10: start watchdog
-        return;
-      }
-
-      if (chunk.startsWith('FILE_END')) {
-        this._clearTransferTimer(); // Enhancement 10: cancel watchdog
-        this._log('info', 'FILE_END received. Parsing soil JSON…');
-
-        const startIdx = this._buffer.indexOf('{');
-        const endIdx   = this._buffer.lastIndexOf('}');
-
-        if (startIdx !== -1 && endIdx > startIdx) {
-          const jsonStr = this._buffer.substring(startIdx, endIdx + 1);
-
-          try {
-            const raw = JSON.parse(jsonStr);
-            const soilData = validateAndMapSoilData(raw); // Enhancement 8
-
-            saveSoilRecord(soilData)
-              .then(() => this._log('info', 'Soil record saved to local storage ✓'))
-              .catch(e  => this._log('error', `Save failed: ${e?.message}`));
-
-            this._callbacks?.onData(soilData);
-
-          } catch (parseErr: any) {
-            this._log('warn', `Data validation failed: ${parseErr.message}. Chunk discarded.`);
-          }
-        } else {
-          this._log('warn', 'FILE_END received but buffer contained no valid JSON block.');
-        }
-
-        this._buffer = '';
-        return;
-      }
-
-      if (chunk.includes('TRANSFER_COMPLETE') || chunk.includes('ALL FILES TRANSFERED')) {
-        this._clearTransferTimer();
-        this._transferCount++;
-        this._log('info', `Transfer ${this._transferCount} complete.`);
-
-        if (this._transferCount >= 2) {
-          this._log('info', 'All transfers received. Finalising session…');
-          this._isClosing = true;
-          this._setStatus('complete');
-          setTimeout(() => this.disconnect(), 1200);
-        } else {
-          this._buffer = '';
-          this._log('info', 'Waiting for second transfer…');
-        }
-        return;
-      }
-
-      // Normal data — accumulate
-      this._buffer += chunk;
-
-    } catch (err: any) {
-      this._log('error', `Chunk processing exception: ${err?.message}`);
-    }
-  }
-
-  // ── Enhancement 7: AppState listener ─────────────────────────────────────
-  private _registerAppStateListener(): void {
-    // Remove previous listener to avoid stacking
-    this._appStateListener?.remove();
-
-    this._appStateListener = AppState.addEventListener('change', (nextState) => {
-      const previous = this._appState;
-      this._appState = nextState;
-
-      if (nextState === 'background' || nextState === 'inactive') {
-        this._log('info', 'App backgrounded — pausing BLE notification processing.');
-        // We keep the connection alive but ignore chunks (guarded in callback above)
-      }
-
-      if (nextState === 'active' && previous !== 'active') {
-        this._log('info', 'App foregrounded — resuming BLE.');
-        // If we lost connection while backgrounded, re-attempt
-        if (this._device && !this._isClosing) {
-          this._device.isConnected().then(isConn => {
-            if (!isConn) {
-              this._log('warn', 'Connection lost while backgrounded. Reconnecting…');
-              this._handleDisconnect();
-            }
-          });
-        }
-      }
-    });
-  }
-
-  // ── Auto-reconnect ────────────────────────────────────────────────────────
-  private async _handleDisconnect(): Promise<void> {
-    this._isClosing = false;
-
-    if (this._reconnectAttempts >= MAX_RECONNECT) {
-      this._log('error', `Auto-reconnect exhausted after ${MAX_RECONNECT} attempts.`);
-      this._setStatus('error');
-      return;
+    if (!this.device || !this.currentWriteCharacteristic) {
+      throw new Error('BLE_NOT_READY: Connect to Agni before requesting data.');
     }
 
-    this._reconnectAttempts++;
-    const delay = RECONNECT_BASE_MS * this._reconnectAttempts;
-    this._log('warn', `Reconnect attempt ${this._reconnectAttempts}/${MAX_RECONNECT} in ${delay}ms…`);
-    this._setStatus('scanning');
+    await this.subscribeToResponses();
+    this.setStatus('transferring');
+    this.emitLog('info', 'Sending Agni command over BLE...');
 
-    await new Promise(r => setTimeout(r, delay));
-    if (!this._callbacks) return;
+    const encodedCommand = toBase64Command(AGNI_PROTOCOL.command, AGNI_PROTOCOL.commandEncoding);
+    this.resetResponseTimer();
 
-    try {
-      await this.scanAndConnect(this._callbacks);
-      this.startListening();
-    } catch (e: any) {
-      this._log('error', `Reconnect failed: ${e?.message}`);
-    }
+    await this.device.writeCharacteristicWithResponseForService(
+      AGNI_PROTOCOL.serviceUuid,
+      AGNI_PROTOCOL.writeCharacteristicUuid,
+      encodedCommand
+    );
   }
 
-  // ── Disconnect (full teardown) ─────────────────────────────────────────────
+  async connectAndRead(callbacks: BLECallbacks): Promise<AgniBlePayload | null> {
+    this.callbacks = callbacks;
+    this.latestError = null;
+    this.latestPayload = null;
+
+    await this.requestAndroidPermissions();
+    const device = await this.scanForDevice();
+    await this.connectToDevice(device);
+    await this.requestSoilReading();
+
+    return this.latestPayload;
+  }
+
   async disconnect(): Promise<void> {
-    const hadActiveResources = Boolean(
-      this._charSubscription ||
-      this._btStateSubscription ||
-      this._appStateListener ||
-      this._device ||
-      this._isScanning
-    );
+    this.stopScan();
+    this.clearResponseTimer();
+    this.notifySubscription?.remove();
+    this.notifySubscription = null;
 
-    this._isClosing = true;
-    
-    // Stop any active scan immediately so scanAndConnect's Promise resolve path stops
-    if (this._isScanning) {
+    if (this.device) {
       try {
-        const m = this._manager;
-        if (m) m.stopDeviceScan();
-      } catch { /* ignore */ }
-    }
-    
-    this._isScanning = false;
-    this._clearTransferTimer();
-
-    // Enhancement 6: remove characteristic subscription
-    if (this._charSubscription) {
-      this._charSubscription.remove();
-      this._charSubscription = null;
+        const stillConnected = await this.device.isConnected();
+        if (stillConnected) {
+          await this.device.cancelConnection();
+        }
+      } catch {
+        // no-op
+      }
     }
 
-    // Remove BT state watcher
-    if (this._btStateSubscription) {
-      this._btStateSubscription.remove();
-      this._btStateSubscription = null;
-    }
-
-    // Enhancement 7: remove AppState listener
-    if (this._appStateListener) {
-      this._appStateListener.remove();
-      this._appStateListener = null;
-    }
-
-    if (this._device) {
-      try {
-        const isConn = await this._device.isConnected();
-        if (isConn) await this._device.cancelConnection();
-      } catch { /* device already gone */ }
-      finally { this._device = null; }
-    }
-
-    this._buffer            = '';
-    this._transferCount     = 0;
-    this._reconnectAttempts = 0;
-    this._appState          = 'active';
-    this._lastBtState       = null;
-    this._callbacks         = null;
-
-    if (hadActiveResources) {
-      this._log('info', 'Disconnected and all resources released.');
-    }
+    this.device = null;
+    this.currentWriteCharacteristic = null;
+    this.currentNotifyCharacteristic = null;
+    this.latestPayload = null;
+    this.setStatus('idle');
   }
 
-  // ── Public state ─────────────────────────────────────────────────────────
-  get isConnected(): boolean { return this._device !== null && !this._isClosing; }
-  get isScanning():  boolean { return this._isScanning; }
+  destroy(): void {
+    this.bluetoothSubscription?.remove();
+    this.bluetoothSubscription = null;
+    this.appStateSubscription?.remove();
+    this.appStateSubscription = null;
+    void this.disconnect();
+    this.manager.destroy();
+  }
 }
 
-// ── Singleton ─────────────────────────────────────────────────────────────────
 export const bleService = new BLEService();
