@@ -46,9 +46,20 @@ const SwipeContainer = forwardRef<SwipeContainerHandle, SwipeContainerProps>(
     // ── Stable JS-side refs (no stale closures) ────────────────────────────
     const committedIndexRef = useRef(initialIndex);
     const onIndexChangeRef = useRef(onIndexChange);
+
     useEffect(() => {
       onIndexChangeRef.current = onIndexChange;
     }, [onIndexChange]);
+
+    // ── React to prop changes (External navigation) ────────────────────────
+    useEffect(() => {
+      if (initialIndex !== committedIndexRef.current) {
+        // We were moved from outside (e.g. by a button in a child screen)
+        currentIndex.value = initialIndex;
+        translateX.value = withSpring(-initialIndex * SCREEN_WIDTH, SPRING_CONFIG);
+        committedIndexRef.current = initialIndex;
+      }
+    }, [initialIndex]);
 
     // ── Imperative API: called directly by tab bar tap ─────────────────────
     // This runs SYNCHRONOUSLY — no Zustand round-trip, no useEffect delay

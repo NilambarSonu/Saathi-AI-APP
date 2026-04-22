@@ -38,6 +38,12 @@ function friendlyError(raw: string): string {
   if (raw.startsWith('BT_NOT_READY:')) {
     return 'Bluetooth is OFF. Please turn Bluetooth on and try again.';
   }
+  if (raw.startsWith('BT_DENIED:')) {
+    return 'Bluetooth activation was cancelled. Please allow it to scan for Agni.';
+  }
+  if (raw.startsWith('BT_PROMPT_TIMEOUT:')) {
+    return 'Bluetooth activation prompt timed out. Please turn on Bluetooth manually in Settings.';
+  }
   if (raw.startsWith('SCAN_TIMEOUT:')) {
     return 'No Agni device found nearby. Make sure it is powered on and in range.';
   }
@@ -86,6 +92,14 @@ export function useBLE(): UseBLEReturn {
     },
     [addLog]
   );
+
+  // Auto-show logs on error (optional, but helpful for debugging)
+  useEffect(() => {
+    if (status === 'error' || latestError) {
+      // We don't force setShowLogs here because it's in the Screen, 
+      // but we could add a prop if we wanted to.
+    }
+  }, [status, latestError]);
 
   const handleData = useCallback((payload: AgniBlePayload) => {
     if (!isMounted.current) return;
@@ -197,13 +211,31 @@ export function useBLE(): UseBLEReturn {
   }, []);
 
   const enableBluetooth = useCallback(async () => {
-    const enabled = await bleService.requestEnableBluetooth();
-    if (enabled) {
-      setBluetoothOffModalVisible(false);
-      setStatus((prev) => (prev === 'bluetooth_off' ? 'idle' : prev));
+    try {
+      const enabled = await bleService.requestEnableBluetooth();
+      if (enabled) {
+        setBluetoothOffModalVisible(false);
+        setLatestError(null);
+        // Automatically start connecting once enabled
+        void connect();
+      } else {
+        // If it returned false, it was either denied or timed out.
+        // The service already set the status to bluetooth_off.
+        setBluetoothOffModalVisible(false);
+      }
+      return enabled;
+    } catch (error: any) {
+      const message = error?.message || '';
+      if (message.includes('PERMISSION_DENIED') || message.includes('PERMISSION_BLOCKED')) {
+        setPermissionDenied(true);
+        setStatus('permission_denied');
+      } else {
+        handleError(message);
+        setStatus('error');
+      }
+      return false;
     }
-    return enabled;
-  }, []);
+  }, [handleError, connect]);
 
   const cancelBluetoothPrompt = useCallback(async () => {
     connectIntentRef.current = false;

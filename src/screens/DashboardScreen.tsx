@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/Colors';
@@ -315,7 +314,6 @@ function HowItWorksTicker() {
 }
 
 export default function DashboardScreen() {
-  const router = useRouter();
   const user = useAuthStore(s => s.user);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -349,7 +347,7 @@ export default function DashboardScreen() {
   };
 
   const handleConnect = () => {
-    router.replace('/(app)/connect');
+    useNavigationStore.getState().setCurrentIndex(1);
   };
 
   useEffect(() => {
@@ -511,7 +509,7 @@ export default function DashboardScreen() {
               </Text>
               <TouchableOpacity onPress={handleConnect} style={{ alignSelf: 'flex-start' }}>
                 <LinearGradient colors={['#FF5F6D', '#FFC371']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.heroBtn, { borderWidth: 0, paddingHorizontal: 24 }]}>
-                  <Text style={{ fontSize: 16, fontFamily: 'Sora_600SemiBold', color: '#FFFFFF', marginRight: 10 }}>Pair Device</Text>
+                  <Text style={{ fontSize: 16, fontFamily: 'Sora_600SemiBold', color: '#FFFFFF', marginRight: 10 }}>Pair Agni</Text>
                   <Feather name="arrow-right" size={18} color="#FFFFFF" />
                 </LinearGradient>
               </TouchableOpacity>

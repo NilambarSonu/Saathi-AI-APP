@@ -1,4 +1,5 @@
-import { AppState, PermissionsAndroid, Platform, type AppStateStatus } from 'react-native';
+import { AppState, Platform, Linking, type AppStateStatus } from 'react-native';
+import { request, check, requestMultiple, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import {
   BleError,
   BleManager,
@@ -140,6 +141,7 @@ export type BLEStatus =
   | 'complete'
   | 'error'
   | 'bluetooth_off'
+  | 'activating_bluetooth'
   | 'permission_denied';
 
 export type LogLevel = 'info' | 'warn' | 'error';
@@ -243,7 +245,12 @@ class BLEService {
       this.currentBluetoothState = state;
       this.callbacks?.onBluetoothState?.(state);
 
-      if (state !== 'PoweredOn' && this.currentStatus !== 'permission_denied') {
+      // Only set bluetooth_off if we aren't in the middle of activating it or if permissions are missing
+      if (
+        state !== 'PoweredOn' && 
+        this.currentStatus !== 'permission_denied' && 
+        this.currentStatus !== 'activating_bluetooth'
+      ) {
         this.setStatus('bluetooth_off');
       }
     }, true);
@@ -271,47 +278,92 @@ class BLEService {
     return (await this.getBluetoothState()) === 'PoweredOn';
   }
 
+  private isActivating = false;
+
+  /**
+   * Triggers the native Android Bluetooth activation dialog.
+   * Optimized for instant response and accurate UI state transitions.
+   */
   async requestEnableBluetooth(): Promise<boolean> {
     if (Platform.OS !== 'android') {
       return this.isBluetoothPoweredOn();
     }
 
-    const managerAny = this.manager as unknown as { enable?: () => Promise<BleState> };
-    if (typeof managerAny.enable === 'function') {
-      try {
-        const nextState = await managerAny.enable();
-        this.currentBluetoothState = nextState;
-        this.callbacks?.onBluetoothState?.(nextState);
-      } catch {
-        // User may deny the system enable prompt.
-      }
-    }
+    if (this.isActivating) return false;
+    this.isActivating = true;
 
-    return this.isBluetoothPoweredOn();
+    try {
+      // 1. Fast-path: Check permissions and state immediately
+      const hasPermissions = await this.requestAndroidPermissions();
+      if (!hasPermissions) {
+        this.isActivating = false;
+        return false;
+      }
+
+      if (await this.isBluetoothPoweredOn()) {
+        this.setStatus('idle');
+        this.isActivating = false;
+        return true;
+      }
+
+      // 2. Trigger Activation Dialog
+      this.setStatus('activating_bluetooth');
+      
+      const managerAny = this.manager as any;
+      if (typeof managerAny.enable === 'function') {
+        // manager.enable() is a native call that resolves when the dialog is closed.
+        // This is the most reliable way to detect Allow/Deny instantly.
+        await managerAny.enable().catch(() => {
+          // Some devices might throw if already enabling or if intent fails
+        });
+      } else {
+        // Fallback to Intent if library method is missing
+        await Linking.sendIntent('android.bluetooth.adapter.action.REQUEST_ENABLE');
+        // Brief polling fallback only for Intent
+        for (let i = 0; i < 10; i++) {
+          await new Promise(r => setTimeout(r, 500));
+          if (await this.isBluetoothPoweredOn()) break;
+        }
+      }
+
+      // 3. Final State Sync
+      const finalState = await this.getBluetoothState();
+      const success = finalState === 'PoweredOn';
+      this.setStatus(success ? 'idle' : 'bluetooth_off');
+      return success;
+
+    } catch (error: any) {
+      this.setStatus('bluetooth_off');
+      return false;
+    } finally {
+      this.isActivating = false;
+    }
   }
 
-  async requestAndroidPermissions(): Promise<void> {
-    if (Platform.OS !== 'android') return;
+  /**
+   * Helper to request all required Android permissions for BLE operations.
+   */
+  async requestAndroidPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
 
-    const sdkVersion = typeof Platform.Version === 'number' ? Platform.Version : Number(Platform.Version);
-    const permissions =
-      sdkVersion >= 31
-        ? [
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
-            PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-          ]
-        : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
+    const sdkVersion = Number(Platform.Version);
+    const permissions = sdkVersion >= 31 
+      ? [
+          PERMISSIONS.ANDROID.BLUETOOTH_SCAN, 
+          PERMISSIONS.ANDROID.BLUETOOTH_CONNECT, 
+          PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION, 
+          PERMISSIONS.ANDROID.BLUETOOTH_ADVERTISE
+        ]
+      : [PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION];
 
-    const results = await PermissionsAndroid.requestMultiple(permissions);
-    const denied = permissions.filter(
-      (permission) => results[permission] !== PermissionsAndroid.RESULTS.GRANTED
-    );
-
-    if (denied.length > 0) {
+    const results = await requestMultiple(permissions);
+    const allGranted = permissions.every(p => results[p] === RESULTS.GRANTED || results[p] === RESULTS.LIMITED);
+    
+    if (!allGranted) {
       this.setStatus('permission_denied');
-      throw new Error(`PERMISSION_DENIED:${denied.join(',')}`);
     }
+    
+    return allGranted;
   }
 
   private matchesTargetDevice(device: Device): boolean {
@@ -518,7 +570,9 @@ class BLEService {
     this.latestError = null;
     this.latestPayload = null;
 
-    await this.requestAndroidPermissions();
+    const hasPerms = await this.requestAndroidPermissions();
+    if (!hasPerms) throw new Error('PERMISSION_DENIED: Required Bluetooth/Location permissions are missing.');
+
     const device = await this.scanForDevice();
     await this.connectToDevice(device);
     await this.requestSoilReading();
@@ -526,6 +580,9 @@ class BLEService {
     return this.latestPayload;
   }
 
+  /**
+   * Cleans up all subscriptions and disconnects from device.
+   */
   async disconnect(): Promise<void> {
     this.stopScan();
     this.clearResponseTimer();
@@ -534,13 +591,10 @@ class BLEService {
 
     if (this.device) {
       try {
-        const stillConnected = await this.device.isConnected();
-        if (stillConnected) {
+        if (await this.device.isConnected()) {
           await this.device.cancelConnection();
         }
-      } catch {
-        // no-op
-      }
+      } catch { /* Ignore */ }
     }
 
     this.device = null;
@@ -550,11 +604,12 @@ class BLEService {
     this.setStatus('idle');
   }
 
+  /**
+   * Full cleanup for component unmounting.
+   */
   destroy(): void {
     this.bluetoothSubscription?.remove();
-    this.bluetoothSubscription = null;
     this.appStateSubscription?.remove();
-    this.appStateSubscription = null;
     void this.disconnect();
     this.manager.destroy();
   }

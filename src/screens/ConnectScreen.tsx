@@ -60,6 +60,7 @@ const STATUS_CONFIG: Record<string, { label: string; colors: [string, string, ..
   complete:         { label: 'Transfer Complete ✓',        colors: ['#70E000', '#38B000']            },
   error:            { label: 'Retry Connection',          colors: ['#F59E0B', '#D97706']            },
   bluetooth_off:    { label: 'Waiting for Bluetooth…',    colors: ['#9CA3AF', '#6B7280']            },
+  activating_bluetooth: { label: 'Activating Bluetooth…', colors: ['#FCD34D', '#F59E0B']            },
   permission_denied:{ label: 'Grant BT Permissions',      colors: ['#FCD34D', '#D97706']            },
 };
 
@@ -370,7 +371,7 @@ export default function ConnectScreen() {
   const [pipelineMessage, setPipelineMessage] = useState<string | null>(null);
 
   const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.idle;
-  const isBusy = status === 'scanning' || status === 'connecting' || status === 'transferring';
+  const isBusy = status === 'scanning' || status === 'connecting' || status === 'transferring' || status === 'activating_bluetooth';
   const isConnected = status === 'connected' || status === 'transferring' || status === 'complete';
 
   const handlePress = async () => {
@@ -388,10 +389,7 @@ export default function ConnectScreen() {
     } else if (status === 'permission_denied') {
       await retryPermission();
     } else if (status === 'bluetooth_off' || bluetoothState === 'PoweredOff') {
-      const enabled = await enableBluetooth();
-      if (!enabled) {
-        await openBluetoothSettings();
-      }
+      await enableBluetooth();
     } else if (!isBusy) {
       await connect();
     }
@@ -523,7 +521,7 @@ export default function ConnectScreen() {
           <TouchableOpacity
             style={s.connectBtnContainer}
             onPress={handlePress}
-            disabled={status === 'connecting' || status === 'transferring'}
+            disabled={status === 'connecting' || status === 'transferring' || status === 'activating_bluetooth'}
             activeOpacity={0.8}
           >
             <LinearGradient
