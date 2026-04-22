@@ -1,4 +1,4 @@
-import { api, apiCall } from '@/services/api';
+import apiClient from '@/api/axiosConfig';
 
 export interface SoilTest {
   id: string;
@@ -17,32 +17,38 @@ export interface SoilTest {
 }
 
 /**
- * Get all soil tests for the current user
+ * GET /api/soil-tests/:userId — Get soil tests for a user.
+ * Falls back to /api/soil-tests if no userId given.
+ * Requires Authorization header.
  */
 export async function getSoilTests(userId?: string): Promise<SoilTest[]> {
   const normalizedUserId = typeof userId === 'string' ? userId.trim() : '';
   const endpoint = normalizedUserId.length > 0
     ? `/soil-tests/${encodeURIComponent(normalizedUserId)}`
     : '/soil-tests';
-  return apiCall<SoilTest[]>(endpoint);
+  const { data } = await apiClient.get<SoilTest[]>(endpoint);
+  return Array.isArray(data) ? data : (data as any)?.tests ?? [];
 }
 
 /**
- * Get a specific soil test by ID
+ * GET /api/soil-tests/:id — Get a specific soil test.
+ * Requires Authorization header.
  */
 export async function getSoilTest(id: string): Promise<SoilTest> {
-  return apiCall<SoilTest>(`/soil-tests/${id}`);
+  const { data } = await apiClient.get<SoilTest>(`/soil-tests/${id}`);
+  return (data as any)?.test ?? data;
 }
 
 /**
- * Save a new soil test record
+ * POST /api/soil-tests — Save a new soil test record.
+ * Requires Authorization header.
  */
 export async function saveSoilTest(data: Omit<SoilTest, 'id' | 'userId' | 'createdAt'>): Promise<SoilTest> {
-  return apiCall<SoilTest>('/soil-tests', {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
+  const { data: res } = await apiClient.post<any>('/soil-tests', data);
+  return res?.test ?? res;
 }
+
+// ─── Soil Pipeline Helpers ────────────────────────────────────────────────────
 
 type SoilPipelinePayload = {
   deviceId?: string;
@@ -81,9 +87,12 @@ export function normalizeSoilPayload(input: SoilPipelinePayload): Record<string,
   };
 }
 
-export async function sendSoilDataToPipeline(input: SoilPipelinePayload) {
+/**
+ * POST /api/soil-tests — Full pipeline: normalize → save.
+ * Requires Authorization header (handled by apiClient interceptor).
+ */
+export async function sendSoilDataToPipeline(input: SoilPipelinePayload): Promise<SoilTest> {
   const payload = normalizeSoilPayload(input);
-  return api.soilTests(payload);
+  const { data } = await apiClient.post<any>('/soil-tests', payload);
+  return data?.test ?? data;
 }
-
-

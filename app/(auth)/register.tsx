@@ -28,7 +28,7 @@ export default function RegisterScreen() {
       // saathiai://auth/callback?token=…, the Linking listener in _layout.tsx
       // catches the URL, parses the token, and navigates to /(app).
       const session = await startSocialAuth(provider);
-      login(session.user, session.token);
+      await login(session.user, session.token, session.refreshToken ?? null);
       router.replace('/(app)');
     } catch (err: any) {
       Alert.alert('Social Auth Error', err?.message || 'Could not complete social login.');

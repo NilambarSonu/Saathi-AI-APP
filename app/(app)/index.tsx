@@ -150,8 +150,6 @@ function TabItem({
         {tab.label}
       </Text>
 
-      {/* Bottom pill indicator — only shows for active tab */}
-      {isFocused && <View style={s.bottomDot} />}
     </TouchableOpacity>
   );
 }

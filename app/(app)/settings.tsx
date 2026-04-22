@@ -9,7 +9,8 @@ import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Spacing } from '@/constants/Spacing';
 import { useAuthStore } from '@/store/authStore';
-import { apiCall, clearAuthTokens } from '@/services/api';
+import apiClient from '@/api/axiosConfig';
+import { getUserData } from '@/features/auth/services/user';
 import { logout } from '@/features/auth/services/auth';
 import * as Sharing from 'expo-sharing';
 
@@ -103,21 +104,17 @@ export default function SettingsScreen() {
   const handleExportData = async () => {
     setIsExporting(true);
     try {
-      const data = await apiCall<any>('/users/export?format=json');
+      const data = await getUserData('json');
       const jsonString = JSON.stringify(data, null, 2);
-      // Share via the system share sheet as a text blob
       if (await Sharing.isAvailableAsync()) {
-        // Save to a temp file via fetch blob trick (React Native)
-        const tmpPath = `${(global as any).__dirname || '.'}/saathi-export.json`;
         Alert.alert(
           'Data Ready',
           `Your data export has ${Object.keys(data).length} records. Sharing now...`
         );
-        // Fallback: show data summary if sharing not possible
       } else {
         Alert.alert(
           'Export Data',
-          `Records: ${JSON.stringify(data).length > 200 ? JSON.stringify(data).substring(0, 200) + '...' : JSON.stringify(data)}\n\nVisit saathiai.org/account to download your full data export.`
+          `Records: ${jsonString.length > 200 ? jsonString.substring(0, 200) + '...' : jsonString}\n\nVisit saathiai.org/account to download your full data export.`
         );
       }
     } catch (e: any) {
@@ -139,8 +136,8 @@ export default function SettingsScreen() {
           onPress: async () => {
             setIsDeleting(true);
             try {
-              await apiCall('/users/me', { method: 'DELETE' });
-              await clearAuthTokens();
+              await apiClient.delete('/users/me');
+              await logout();
               clearUser();
               router.replace('/(auth)/login');
             } catch (e: any) {

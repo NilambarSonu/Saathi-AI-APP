@@ -12,14 +12,14 @@ const OTP_LENGTH = 6;
 
 export default function VerifyOTPScreen() {
   const { email } = useLocalSearchParams<{ email: string }>();
-  const { setUser } = useAuthStore();
+  const { login } = useAuthStore();
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
   const inputRefs = useRef<TextInput[]>([]);
 
-  // Countdown timer
+  // Countdown timer for resend
   useEffect(() => {
     if (countdown <= 0) { setCanResend(true); return; }
     const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
@@ -56,9 +56,16 @@ export default function VerifyOTPScreen() {
 
     setIsLoading(true);
     try {
+      // verifyOTP(email, otp) → { success, token, refreshToken, user }
       const response = await verifyOTP(email, code);
-      setUser(response.user);
-      router.replace('/(app)');
+
+      if (response.success && response.token && response.user) {
+        // Store session via the auth store (writes to AsyncStorage + Zustand)
+        await login(response.user, response.token, response.refreshToken ?? null);
+        router.replace('/(app)');
+      } else {
+        Alert.alert('Verification Failed', 'Could not verify email. Please try again.');
+      }
     } catch (err: any) {
       Alert.alert('Invalid OTP', err.message || 'The code is incorrect or expired.');
       setOtp(Array(OTP_LENGTH).fill(''));
@@ -115,7 +122,7 @@ export default function VerifyOTPScreen() {
           ))}
         </View>
 
-        {/* Countdown */}
+        {/* Countdown / Resend */}
         <Text style={styles.timer}>
           {canResend ? (
             <Text style={styles.resendLink} onPress={handleResend}>
@@ -148,18 +155,32 @@ const styles = StyleSheet.create({
   back: { padding: 20, paddingTop: 56 },
   backText: { fontFamily: 'Sora_600SemiBold', fontSize: 16, color: Colors.textSecondary },
   content: { flex: 1, paddingHorizontal: 28, alignItems: 'center' },
-  icon: { width: 80, height: 80, backgroundColor: Colors.surfaceAlt, borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 24 },
-  title: { fontFamily: 'Sora_800ExtraBold', fontSize: 24, color: Colors.textPrimary, textAlign: 'center', marginBottom: 10 },
-  subtitle: { fontFamily: 'Sora_400Regular', fontSize: 14, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 36 },
+  icon: {
+    width: 80, height: 80, backgroundColor: Colors.surfaceAlt,
+    borderRadius: 24, alignItems: 'center', justifyContent: 'center', marginBottom: 24,
+  },
+  title: {
+    fontFamily: 'Sora_800ExtraBold', fontSize: 24,
+    color: Colors.textPrimary, textAlign: 'center', marginBottom: 10,
+  },
+  subtitle: {
+    fontFamily: 'Sora_400Regular', fontSize: 14,
+    color: Colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: 36,
+  },
   emailHighlight: { fontFamily: 'Sora_700Bold', color: Colors.textPrimary },
   otpRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-  otpBox: { width: 48, height: 60, borderRadius: 14, borderWidth: 2, borderColor: Colors.border, backgroundColor: Colors.background, fontFamily: 'Sora_800ExtraBold', fontSize: 22, color: Colors.primary },
+  otpBox: {
+    width: 48, height: 60, borderRadius: 14, borderWidth: 2,
+    borderColor: Colors.border, backgroundColor: Colors.background,
+    fontFamily: 'Sora_800ExtraBold', fontSize: 22, color: Colors.primary,
+  },
   otpBoxFilled: { borderColor: Colors.primary, backgroundColor: Colors.surfaceAlt },
   timer: { fontFamily: 'Sora_400Regular', fontSize: 14, color: Colors.textSecondary, marginBottom: 28 },
   timerHighlight: { fontFamily: 'Sora_700Bold', color: Colors.primary },
   resendLink: { fontFamily: 'Sora_700Bold', color: Colors.primary },
-  btnPrimary: { width: '100%', height: 54, backgroundColor: Colors.primary, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  btnPrimary: {
+    width: '100%', height: 54, backgroundColor: Colors.primary,
+    borderRadius: 16, alignItems: 'center', justifyContent: 'center',
+  },
   btnText: { fontFamily: 'Sora_700Bold', fontSize: 15, color: '#fff' },
 });
-
-

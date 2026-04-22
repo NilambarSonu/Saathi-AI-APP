@@ -86,8 +86,8 @@ const FEATURES = [
 const FEATURE_DETAILS: Record<string, any> = {
   analysis: {
     title: 'Instant Analysis',
-    tagline: 'Know Your Soil Instantly ⚡',
-    content: 'Scan with Agni and get:\n• NPK levels in seconds\n• Soil health score\n• AI-powered fertilizer advice',
+    tagline: 'Know Your Soil Instantly with Agni ⚡',
+    content: 'Traditional soil testing takes days, sometimes even weeks. Farmers often have to depend on distant laboratories, spend money on testing, and wait without clarity. This delay can lead to wrong fertilizer decisions, reduced crop quality, and unnecessary expenses.\n\nWith Saathi AI and the Agni Soil Scanner, you can analyze your soil directly from your field within seconds. Just insert the device into the soil, and it instantly measures critical parameters like Nitrogen (N), Phosphorus (P), Potassium (K), pH level, moisture, and temperature.\n\nThe system then converts this raw data into a simple, easy-to-understand soil health report. You will also receive an AI-powered soil health score and immediate recommendations tailored specifically to your field conditions.\n\nThis means you no longer have to guess what your soil needs. You can take precise actions at the right time, improving crop yield, reducing fertilizer waste, and saving both time and money.\n\nSaathi AI brings lab-level accuracy directly to your hands — fast, reliable, and farmer-friendly.',
     result: 'Save time, increase yield, avoid lab delays',
     icon: 'trending-up',
     color: '#21db6eff',
@@ -95,8 +95,8 @@ const FEATURE_DETAILS: Record<string, any> = {
   },
   language: {
     title: 'Local Language',
-    tagline: 'Talk in Your Language 🗣️',
-    content: 'Ask questions in:\n• Odia\n• Hindi\n• English\n\nAI responds in your language with voice support',
+    tagline: 'Farming Guidance in Your Own Language 🗣️',
+    content: 'Many farmers struggle to use modern technology because most apps and tools are only available in English or use complicated terminology. This creates a gap between advanced technology and real-world farming needs.\n\nSaathi AI removes this barrier completely by allowing you to interact in your own language. Whether you speak Odia, Hindi, or English, you can ask questions, understand recommendations, and receive guidance in a way that feels natural to you.\n\nYou can even use voice input to speak directly to the AI. Ask questions like “Which fertilizer should I use?” or “Why is my crop turning yellow?” and get clear, practical answers instantly.\n\nThe system not only translates but understands your farming context, making the advice more relevant and actionable. This ensures that every farmer, regardless of education level or language, can confidently use advanced AI tools.\n\nWith Saathi AI, technology becomes simple, accessible, and truly inclusive for every farmer.',
     result: 'No confusion, easy decisions for every farmer',
     icon: 'brain',
     color: '#2787f6ff',
@@ -104,8 +104,8 @@ const FEATURE_DETAILS: Record<string, any> = {
   },
   farming: {
     title: 'Sustainable Farming',
-    tagline: 'Smart & Eco Farming 🌿',
-    content: 'Get:\n• Organic fertilizer suggestions\n• Reduced chemical usage\n• Crop-specific guidance',
+    tagline: 'Smart and Sustainable Farming for the Future 🌿',
+    content: 'Excessive use of chemical fertilizers can harm soil health over time, reduce productivity, and increase farming costs. Many farmers unknowingly overuse fertilizers, leading to poor soil balance and long-term damage.\n\nSaathi AI helps you adopt a smarter and more sustainable approach to farming. Based on your soil data, it provides precise recommendations on what your soil actually needs — not more, not less.\n\nYou will receive a balanced mix of organic and chemical fertilizer suggestions, helping you reduce unnecessary chemical usage while maintaining high productivity. The system also suggests suitable crops based on soil condition, season, and nutrient levels.\n\nBy following these recommendations, you can improve soil fertility, reduce input costs, and ensure better crop quality. Over time, this leads to healthier land, higher profits, and a more sustainable farming practice.\n\nSaathi AI empowers you to farm intelligently — protecting both your income and your soil for future generations.',
     result: 'Better soil health + long-term profit',
     icon: 'microscope',
     color: '#eab329ff',
@@ -113,8 +113,8 @@ const FEATURE_DETAILS: Record<string, any> = {
   },
   mapping: {
     title: 'Field Mapping',
-    tagline: 'See Your Farm Data 📍',
-    content: 'Visualize:\n• Soil test locations\n• Field-wise insights\n• Smart planning tools',
+    tagline: 'Understand Your Farm Like Never Before 📍',
+    content: 'Every part of your field is different. Soil conditions can vary from one area to another, but traditional farming methods treat the entire field the same. This often leads to uneven crop growth and inefficient use of resources.\n\nSaathi AI introduces smart field mapping to solve this problem. Every time you perform a soil test, the data is linked to a specific location on your farm. Over time, this creates a detailed map of your field showing variations in soil health.\n\nYou can visualize where nutrients are low, where moisture is high, and which areas need special attention. This allows you to take targeted actions instead of applying the same treatment everywhere.\n\nWith this insight, you can optimize fertilizer usage, improve crop consistency, and make better long-term planning decisions. It transforms your farm into a data-driven system where every decision is backed by real information.\n\nSaathi AI helps you see your land not just as a field, but as a smart, manageable ecosystem.',
     result: 'Make data-driven farming decisions',
     icon: 'map-marker-radius',
     color: '#c438e4ff',
@@ -595,26 +595,29 @@ export default function DashboardScreen() {
           </Animated.View>
           <Animated.View style={[s.popupContainer, { transform: [{ translateY: popupSlide }] }]}>
             <View style={s.popupCard}>
-              <LinearGradient colors={FEATURE_DETAILS[selectedFeature].gradient} style={s.popupGradientHeader}>
-                <View style={[s.popupIconBox, { backgroundColor: FEATURE_DETAILS[selectedFeature].color + '22' }]}>
-                  <MaterialCommunityIcons name={FEATURE_DETAILS[selectedFeature].icon as any} size={32} color={FEATURE_DETAILS[selectedFeature].color} />
+              <View style={s.popupHandle} />
+              <ScrollView showsVerticalScrollIndicator={false} bounces={true}>
+                <LinearGradient colors={FEATURE_DETAILS[selectedFeature].gradient} style={s.popupGradientHeader}>
+                  <View style={[s.popupIconBox, { backgroundColor: FEATURE_DETAILS[selectedFeature].color + '22' }]}>
+                    <MaterialCommunityIcons name={FEATURE_DETAILS[selectedFeature].icon as any} size={32} color={FEATURE_DETAILS[selectedFeature].color} />
+                  </View>
+                </LinearGradient>
+                <View style={s.popupBody}>
+                  <Text style={s.popupPopupTitle}>{FEATURE_DETAILS[selectedFeature].title}</Text>
+                  <Text style={s.popupTagline}>{FEATURE_DETAILS[selectedFeature].tagline}</Text>
+                  <View style={s.popupDivider} />
+                  <Text style={s.popupContent}>{FEATURE_DETAILS[selectedFeature].content}</Text>
+                  <View style={s.popupResultBox}>
+                    <Text style={s.popupResultLabel}>KEY BENEFIT</Text>
+                    <Text style={s.popupResultText}>{FEATURE_DETAILS[selectedFeature].result}</Text>
+                  </View>
+                  <TouchableOpacity onPress={hidePopup} style={s.popupCloseBtn}>
+                    <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={s.popupCloseGradient}>
+                      <Text style={s.popupCloseText}>Got it, thanks!</Text>
+                    </LinearGradient>
+                  </TouchableOpacity>
                 </View>
-              </LinearGradient>
-              <View style={s.popupBody}>
-                <Text style={s.popupPopupTitle}>{FEATURE_DETAILS[selectedFeature].title}</Text>
-                <Text style={s.popupTagline}>{FEATURE_DETAILS[selectedFeature].tagline}</Text>
-                <View style={s.popupDivider} />
-                <Text style={s.popupContent}>{FEATURE_DETAILS[selectedFeature].content}</Text>
-                <View style={s.popupResultBox}>
-                  <Text style={s.popupResultLabel}>KEY BENEFIT</Text>
-                  <Text style={s.popupResultText}>{FEATURE_DETAILS[selectedFeature].result}</Text>
-                </View>
-                <TouchableOpacity onPress={hidePopup} style={s.popupCloseBtn}>
-                  <LinearGradient colors={[Colors.primary, Colors.primaryDark]} style={s.popupCloseGradient}>
-                    <Text style={s.popupCloseText}>Got it, thanks!</Text>
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
+              </ScrollView>
             </View>
           </Animated.View>
         </View>
@@ -712,6 +715,19 @@ const s = StyleSheet.create({
     overflow: 'hidden',
     ...Shadows.lg,
     elevation: 20,
+    maxHeight: Dimensions.get('window').height * 0.75,
+  },
+  popupHandle: {
+    width: 36,
+    height: 5,
+    backgroundColor: Colors.sep2,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 8,
+    position: 'absolute',
+    top: 0,
+    zIndex: 10,
   },
   popupGradientHeader: {
     height: 120,

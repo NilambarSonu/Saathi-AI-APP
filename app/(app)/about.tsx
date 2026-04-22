@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import LottieView from 'lottie-react-native';
 import { Colors } from '@/constants/Colors';
 import { Spacing } from '@/constants/Spacing';
-import { apiCall } from '@/services/api';
+import apiClient from '@/api/axiosConfig';
 
 // ─── Data ────────────────────────────────────────────────────
 const STATS = [
@@ -90,10 +90,7 @@ export default function AboutScreen() {
     }
     setIsSending(true);
     try {
-      await apiCall('/contact', {
-        method: 'POST',
-        body: JSON.stringify(formData),
-      });
+      await apiClient.post('/contact', formData);
       Alert.alert('Message Sent!', "Thank you! We'll get back to you shortly.");
       setFormData({ name: '', email: '', message: '' });
     } catch (e: any) {

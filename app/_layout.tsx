@@ -19,8 +19,7 @@ import Constants from 'expo-constants';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { SoilMarkersProvider } from '@/context/SoilMarkersContext';
 import { useAuthStore } from '@/store/authStore';
-import { checkAuthStatus } from '@/features/auth/services/auth';
-import { getStoredAccessToken } from '@/services/api';
+import { checkAuthStatus, registerDevice } from '@/features/auth/services/auth';
 
 SplashScreen.preventAutoHideAsync();
 WebBrowser.maybeCompleteAuthSession();
@@ -40,19 +39,22 @@ export default function RootLayout() {
   useEffect(() => {
     async function initializeApp() {
       try {
+        // checkAuthStatus reads saathi_token from AsyncStorage and hits /api/user
         const user = await checkAuthStatus();
-        if (user) {
-          const token = await getStoredAccessToken();
-          useAuthStore.setState({
-            user,
-            token: token || null,
-            isAuthenticated: true,
-            isLoading: false,
-          });
 
+        if (user) {
+          // Restore session into Zustand (token already in AsyncStorage for interceptor)
+          const { useAuthStore: store } = await import('@/store/authStore');
+          const currentToken = store.getState().token;
+          await store.getState().setAuth(
+            currentToken || '', // token is already in AsyncStorage; just sync Zustand
+            store.getState().refreshToken,
+            user
+          );
+
+          // Register push token in background (non-blocking)
           try {
             if (Constants.appOwnership !== 'expo') {
-              const { registerDevice } = await import('../src/features/auth/services/auth');
               const expoToken = (await Notifications.getExpoPushTokenAsync()).data;
               await registerDevice({
                 expo_push_token: expoToken,
@@ -64,11 +66,21 @@ export default function RootLayout() {
             console.warn('[Push Register Error]', error);
           }
         } else {
-          useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
+          useAuthStore.setState({
+            user: null,
+            token: null,
+            refreshToken: null,
+            isAuthenticated: false,
+          });
         }
       } catch (error) {
         console.error('[App Init]', error);
-        useAuthStore.setState({ user: null, token: null, isAuthenticated: false });
+        useAuthStore.setState({
+          user: null,
+          token: null,
+          refreshToken: null,
+          isAuthenticated: false,
+        });
       } finally {
         useAuthStore.setState({ isLoading: false });
         if (fontsLoaded) {
@@ -82,16 +94,17 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
+  // Auto-redirect to login when user logs out from any screen
   useEffect(() => {
     const unsubscribe = useAuthStore.subscribe((state, prevState) => {
       if (prevState.isAuthenticated && !state.isAuthenticated && !state.isLoading) {
         router.replace('/(auth)/login');
       }
     });
-
     return unsubscribe;
   }, []);
 
+  // Handle deep-link push notification taps
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const screen = response.notification.request.content.data?.screen;
@@ -99,7 +112,6 @@ export default function RootLayout() {
         navigationRouter.push(`/(app)/${screen}`);
       }
     });
-
     return () => subscription.remove();
   }, [navigationRouter]);
 
@@ -118,5 +130,3 @@ export default function RootLayout() {
     </ErrorBoundary>
   );
 }
-
-

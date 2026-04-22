@@ -25,7 +25,7 @@ const TABS = [
 
 // Tab bar pill dimensions
 const TAB_BAR_WIDTH = SCREEN_WIDTH - 40;   // 20px margin each side
-const TAB_BAR_HEIGHT = 64;
+const TAB_BAR_HEIGHT = 62;
 const TAB_INDICATOR_WIDTH = TAB_BAR_WIDTH / TABS.length - 8;
 
 interface LiquidGlassTabBarProps {

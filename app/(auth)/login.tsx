@@ -58,7 +58,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       const response = await loginWithCredentials(usernameOrEmail.trim(), password);
-      login(response.user, response.token);
+      await login(response.user, response.token, response.refreshToken ?? null);
       // Clear any pending BLE intent to ensure we land on Home, not Connect
       await AsyncStorage.removeItem('saathi_ble_connect_intent');
       router.replace('/(app)');
@@ -84,7 +84,7 @@ export default function LoginScreen() {
     setSocialLoading(provider);
     try {
       const session = await startSocialAuth(provider);
-      login(session.user, session.token);
+      await login(session.user, session.token, session.refreshToken ?? null);
       await AsyncStorage.removeItem('saathi_ble_connect_intent');
       router.replace('/(app)');
       // Browser closed — Linking listener in _layout.tsx handles the callback

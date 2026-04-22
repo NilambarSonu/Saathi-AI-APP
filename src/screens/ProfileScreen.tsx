@@ -3,7 +3,7 @@ import { hideTabBar, showTabBar } from '@/constants/Animations';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   TextInput, Alert, ActivityIndicator, Switch,
-  Platform, Image, Animated, Modal,
+  Platform, Image, Animated, Modal, ImageBackground,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,9 +11,15 @@ import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { Spacing } from '@/constants/Spacing';
 import { useAuthStore } from '@/store/authStore';
-import { apiCall } from '@/services/api';
-import { logout } from '@/features/auth/services/auth';
-import { getUserProfile } from '@/features/auth/services/user';
+import { logout, sendPasswordChangeOtp } from '@/features/auth/services/auth';
+import {
+  getUserProfile,
+  updateUserProfile,
+  getSettings,
+  updateSettings,
+  getPrivacySettings,
+  updatePrivacySettings,
+} from '@/features/auth/services/user';
 
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -222,28 +228,25 @@ export default function ProfileScreen() {
         setOriginalLocation(next.location || '');
         setAvatarFailed(false);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
-    apiCall<{ aiPricingEnabled: boolean }>('/settings')
-      .then(d => setAiPricingEnabled(d.aiPricingEnabled))
-      .catch(() => {});
+    getSettings()
+      .then(d => setAiPricingEnabled(d.aiPricingEnabled ?? false))
+      .catch(() => { });
 
-    apiCall<any>('/privacy-settings')
+    getPrivacySettings()
       .then(d => {
         if (d && Object.keys(d).length > 0) setPrivacySettings(d);
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const handleSave = async () => {
     if (!hasChanges) return;
     setIsSaving(true);
     try {
-      const result = await apiCall<{ user: any }>('/user', {
-        method: 'PUT',
-        body: JSON.stringify({ name, username: name, location }),
-      });
-      setUser(mergeUser(user, result?.user || { name, username: name, location }));
+      const updated = await updateUserProfile({ name, username: name, location });
+      setUser(mergeUser(user, updated || { name, username: name, location }));
       setOriginalName(name);
       setOriginalLocation(location);
       Alert.alert('✅ Saved', 'Your profile has been updated.');
@@ -257,7 +260,7 @@ export default function ProfileScreen() {
   const handleAiPricingToggle = async (val: boolean) => {
     setAiPricingLoading(true);
     try {
-      await apiCall('/settings', { method: 'POST', body: JSON.stringify({ aiPricingEnabled: val }) });
+      await updateSettings({ aiPricingEnabled: val });
       setAiPricingEnabled(val);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to update.');
@@ -272,7 +275,7 @@ export default function ProfileScreen() {
       {
         text: 'Log Out', style: 'destructive', onPress: async () => {
           setIsLoggingOut(true);
-          try { await logout(); } catch {}
+          try { await logout(); } catch { }
           clearUser();
           router.replace('/(auth)/login');
         }
@@ -285,15 +288,15 @@ export default function ProfileScreen() {
       Alert.alert('Not Available', `Password change is not available for ${provider.label} accounts.`);
       return;
     }
-    Alert.alert('Change Password', 'A reset link will be sent to your email.', [
+    Alert.alert('Change Password', 'An OTP will be sent to your email to start the reset process.', [
       { text: 'Cancel', style: 'cancel' },
       {
-        text: 'Send Email', onPress: async () => {
+        text: 'Send OTP', onPress: async () => {
           try {
-            await apiCall('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: user?.email }) });
-            Alert.alert('📧 Email Sent', 'Check your inbox for the reset link.');
+            await sendPasswordChangeOtp();
+            Alert.alert('📧 OTP Sent', 'Check your inbox. Use the Forgot Password screen to complete the change.');
           } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to send reset email.');
+            Alert.alert('Error', e.message || 'Failed to send OTP.');
           }
         }
       },
@@ -305,7 +308,7 @@ export default function ProfileScreen() {
     const nextSettings = { ...privacySettings, [key as keyof typeof privacySettings]: val };
     setPrivacySettings(nextSettings);
     try {
-      await apiCall('/privacy-settings', { method: 'PUT', body: JSON.stringify(nextSettings) });
+      await updatePrivacySettings(nextSettings);
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to update privacy settings.');
       setPrivacySettings({ ...privacySettings, [key as keyof typeof privacySettings]: !val });
@@ -321,75 +324,59 @@ export default function ProfileScreen() {
     ]);
   };
 
-  const handleDeleteAccount = () => {
-    Alert.alert('Delete Account', 'Are you sure you want to permanently delete your account? This action cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete Permanently', style: 'destructive', onPress: async () => {
-          try {
-            await apiCall('/user', { method: 'DELETE' });
-            await logout();
-            clearUser();
-            router.replace('/(auth)/login');
-          } catch (e: any) {
-            Alert.alert('Error', e.message || 'Failed to delete account.');
-          }
-        }
-      },
-    ]);
-  };
-
   return (
     <View style={styles.root}>
 
       {/* ── Hero Header ───────────────────────────────────────── */}
-      <LinearGradient
-        colors={['#0A3D1F', '#1A6B3C', '#2D9B5A']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.hero}
-      >
-        <View style={styles.heroBubble1} />
-        <View style={styles.heroBubble2} />
+      <View style={styles.heroWrapper}>
+        <ImageBackground
+          source={require('assets/images/Profile_page.png')}
+          style={styles.hero}
+          imageStyle={{ opacity: 0.9 }}
+        >
+          <View style={styles.heroOverlay} />
+          <View style={styles.heroBubble1} />
+          <View style={styles.heroBubble2} />
 
-        <Animated.View style={[styles.heroContent, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }]}>
-          {/* Avatar — centred */}
-          <View style={styles.avatarRing}>
-            {!avatarFailed && avatarUri ? (
-              <Image 
-                source={{ uri: avatarUri }} 
-                style={styles.avatarImg} 
-                onError={() => setAvatarFailed(true)}
-              />
-            ) : (
-              <LinearGradient colors={['#4ade80', '#16a34a']} style={styles.avatarImg}>
-                <Text style={styles.avatarInitials}>{getInitials(user)}</Text>
-              </LinearGradient>
-            )}
-            <View style={styles.onlineDot} />
-          </View>
+          <Animated.View style={[styles.heroContent, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }]}>
+            {/* Avatar — centred */}
+            <View style={styles.avatarRing}>
+              {!avatarFailed && avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={styles.avatarImg}
+                  onError={() => setAvatarFailed(true)}
+                />
+              ) : (
+                <LinearGradient colors={['#4ade80', '#16a34a']} style={styles.avatarImg}>
+                  <Text style={styles.avatarInitials}>{getInitials(user)}</Text>
+                </LinearGradient>
+              )}
+              <View style={styles.onlineDot} />
+            </View>
 
-          {/* Name, email & badges below avatar */}
-          <Text style={styles.heroName} numberOfLines={1}>{user?.name || user?.username || 'Kisan'}</Text>
-          <Text style={styles.heroEmail} numberOfLines={1}>{user?.email || ''}</Text>
-          <View style={styles.heroBadgeRow}>
-            <View style={styles.heroBadge}>
-              <Ionicons name={provider.icon as any} size={10} color="#fff" />
-              <Text style={styles.heroBadgeText}>{provider.label}</Text>
-            </View>
-            <View style={styles.heroBadge}>
-              <Ionicons name="time-outline" size={10} color="#fff" />
-              <Text style={styles.heroBadgeText}>{getAccountAge(user?.created_at)}</Text>
-            </View>
-            {user?.location && (
+            {/* Name, email & badges below avatar */}
+            <Text style={styles.heroName} numberOfLines={1}>{user?.name || user?.username || 'Kisan'}</Text>
+            <Text style={styles.heroEmail} numberOfLines={1}>{user?.email || ''}</Text>
+            <View style={styles.heroBadgeRow}>
               <View style={styles.heroBadge}>
-                <Ionicons name="location-outline" size={10} color="#fff" />
-                <Text style={styles.heroBadgeText}>{user.location}</Text>
+                <Ionicons name={provider.icon as any} size={10} color="#fff" />
+                <Text style={styles.heroBadgeText}>{provider.label}</Text>
               </View>
-            )}
-          </View>
-        </Animated.View>
-      </LinearGradient>
+              <View style={styles.heroBadge}>
+                <Ionicons name="time-outline" size={10} color="#fff" />
+                <Text style={styles.heroBadgeText}>{getAccountAge(user?.created_at)}</Text>
+              </View>
+              {user?.location && (
+                <View style={styles.heroBadge}>
+                  <Ionicons name="location-outline" size={10} color="#fff" />
+                  <Text style={styles.heroBadgeText}>{user.location}</Text>
+                </View>
+              )}
+            </View>
+          </Animated.View>
+        </ImageBackground>
+      </View>
 
       {/* ── Scrollable Body ───────────────────────────────────── */}
       <ScrollView
@@ -408,12 +395,12 @@ export default function ProfileScreen() {
           <FieldRow label="Email Address" value={user?.email || ''} readOnly icon="mail-outline" />
           <FieldRow label="Phone Number" value={user?.phone || 'Not provided'} readOnly icon="call-outline" />
           <FieldRow label="Village / City" value={location} onChangeText={setLocation} placeholder="e.g. Balasore, Odisha" icon="location-outline" />
-          
-          <ActionRow 
-            label="Language Preferences" 
-            sublabel={user?.preferredLanguage || 'English'} 
-            icon="language-outline" 
-            onPress={() => Alert.alert('Language', 'Language selection coming soon!')} 
+
+          <ActionRow
+            label="Language Preferences"
+            sublabel={user?.preferredLanguage || 'English'}
+            icon="language-outline"
+            onPress={() => Alert.alert('Language', 'Language selection coming soon!')}
           />
 
           {hasChanges && (
@@ -502,18 +489,11 @@ export default function ProfileScreen() {
             onPress={handleLogout}
             danger
           />
-          <ActionRow
-            label="Delete Account"
-            sublabel="Permanently erase all your data"
-            icon="trash-outline"
-            onPress={handleDeleteAccount}
-            danger
-          />
         </SectionCard>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>Saathi AI  ·  Farmer First Technology</Text>
+          <Text style={styles.footerText}>Saathi AI·Farmer First Technology</Text>
           <Text style={styles.footerSub}>
             ID: {user?.id ? String(user.id).slice(0, 8) + '...' : 'N/A'}  ·  Joined{' '}
             {user?.created_at
@@ -522,7 +502,7 @@ export default function ProfileScreen() {
           </Text>
         </View>
 
-        <View style={{ height: 120 }} />
+        <View style={{ height: 85 }} />
       </ScrollView>
 
       {/* Privacy Settings Modal */}
@@ -586,11 +566,29 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: Colors.background },
 
   // Hero
+  heroWrapper: {
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+    shadowColor: '#1A6B3C',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.25,
+    shadowRadius: 25,
+    elevation: 10,
+    backgroundColor: '#fff',
+    zIndex: 10,
+  },
   hero: {
     paddingTop: Platform.OS === 'ios' ? 52 : 32,
-    paddingBottom: 18,
+    paddingBottom: 20,
+    marginTop: 2,
     paddingHorizontal: 20,
     overflow: 'hidden',
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.35)', // Dark overlay for text legibility
   },
   heroBubble1: {
     position: 'absolute', width: 140, height: 140, borderRadius: 70,
@@ -604,12 +602,12 @@ const styles = StyleSheet.create({
 
   avatarRing: {
     width: 76, height: 76, borderRadius: 38,
-    borderWidth: 2.5, borderColor: '#4ade8055',
+    borderWidth: 2.5, borderColor: '#ffffff44',
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 10,
-    shadowColor: '#4ade80',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
   },
@@ -622,18 +620,33 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 2, right: 2,
     width: 14, height: 14, borderRadius: 7,
     backgroundColor: '#4ade80',
-    borderWidth: 2, borderColor: '#0A3D1F',
+    borderWidth: 2, borderColor: '#1A6B3C',
   },
 
-  heroName: { fontFamily: 'Sora_800ExtraBold', fontSize: 19, color: '#fff', marginBottom: 3, textAlign: 'center' },
-  heroEmail: { fontFamily: 'Sora_400Regular', fontSize: 11, color: '#ffffff99', marginBottom: 10, textAlign: 'center' },
-  heroBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, justifyContent: 'center' },
-  heroBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: '#ffffff18', paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: 20, borderWidth: 1, borderColor: '#ffffff22',
+  heroName: { 
+    fontFamily: 'Sora_800ExtraBold', 
+    fontSize: 20, 
+    color: '#fff', 
+    marginBottom: 2, 
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.4)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
   },
-  heroBadgeText: { fontFamily: 'Sora_600SemiBold', fontSize: 9, color: '#ffffffdd' },
+  heroEmail: { 
+    fontFamily: 'Sora_400Regular', 
+    fontSize: 12, 
+    color: '#ffffffcc', 
+    marginBottom: 12, 
+    textAlign: 'center' 
+  },
+  heroBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
+  heroBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)', paddingHorizontal: 10, paddingVertical: 4,
+    borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  heroBadgeText: { fontFamily: 'Sora_600SemiBold', fontSize: 10, color: '#fff' },
 
   // Scroll body
   scroll: { paddingHorizontal: 16, paddingTop: 20 },
@@ -652,22 +665,28 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
   cardIconBg: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   cardTitle: { fontFamily: 'Sora_700Bold', fontSize: 15, color: Colors.textPrimary },
 
   // Fields
-  fieldRow: { marginBottom: 14 },
-  fieldLabel: { fontFamily: 'Sora_600SemiBold', fontSize: 11, color: Colors.textSecondary, marginBottom: 6, letterSpacing: 0.3 },
+  fieldRow: { marginBottom: 6 },
+  fieldLabel: { fontFamily: 'Sora_600SemiBold', fontSize: 10, color: Colors.textSecondary, marginBottom: 5, letterSpacing: 0.3 },
   fieldInputWrap: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: Colors.background,
-    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 6,
     borderWidth: 1.5, borderColor: Colors.borderLight,
   },
   fieldInputFocused: { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
   fieldInputReadOnlyWrap: { backgroundColor: Colors.surfaceAlt, borderColor: 'transparent' },
-  fieldInput: { flex: 1, fontFamily: 'Sora_400Regular', fontSize: 14, color: Colors.textPrimary },
+  fieldInput: { 
+    flex: 1, 
+    fontFamily: 'Sora_400Regular', 
+    fontSize: 14, 
+    color: Colors.textPrimary,
+    paddingVertical: Platform.OS === 'ios' ? 0 : 2,
+  },
   fieldInputReadOnly: { color: Colors.textMuted },
 
   // Unsaved banner
@@ -695,7 +714,7 @@ const styles = StyleSheet.create({
   // Action rows
   actionRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 13, gap: 12,
+    paddingVertical: 10, gap: 12,
     borderTopWidth: 1, borderTopColor: Colors.borderLight,
   },
   actionIconBg: {
