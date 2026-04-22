@@ -1,5 +1,5 @@
 import { AppState, Platform, Linking, type AppStateStatus } from 'react-native';
-import { request, check, requestMultiple, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import { requestMultiple, checkMultiple, PERMISSIONS, RESULTS } from 'react-native-permissions';
 import {
   BleError,
   BleManager,
@@ -11,10 +11,13 @@ import {
 import { Buffer } from 'buffer';
 import { saveSoilRecord, type SoilData } from '@/services/storage/datastorage';
 
+// ─── Hardware Constants ───────────────────────────────────────────────────────
 const DEVICE_NAME_KEYWORD = 'AGNI';
 const SCAN_TIMEOUT_MS = 12_000;
 const CONNECT_TIMEOUT_MS = 15_000;
 const READ_TIMEOUT_MS = 12_000;
+
+// ─── Agni BLE Protocol (fill once hardware spec is finalised) ─────────────────
 const AGNI_PROTOCOL = {
   serviceUuid: 'REPLACE_ME',
   writeCharacteristicUuid: 'REPLACE_ME',
@@ -24,6 +27,7 @@ const AGNI_PROTOCOL = {
   responseFormat: 'REPLACE_ME',
 };
 
+// ─── Utility Helpers ──────────────────────────────────────────────────────────
 function normalizeUuid(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -48,11 +52,10 @@ function toBase64Command(command: string, encoding: 'text' | 'hex'): string {
   if (encoding === 'hex') {
     const normalized = command.replace(/\s+/g, '');
     if (!/^[0-9a-fA-F]+$/.test(normalized) || normalized.length % 2 !== 0) {
-      throw new Error('INVALID_BLE_COMMAND: Hex command must contain an even number of hex characters.');
+      throw new Error('INVALID_BLE_COMMAND: Hex command must be an even number of hex characters.');
     }
     return Buffer.from(normalized, 'hex').toString('base64');
   }
-
   return Buffer.from(command, 'utf8').toString('base64');
 }
 
@@ -68,14 +71,8 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(message)), timeoutMs);
     promise
-      .then((result) => {
-        clearTimeout(timer);
-        resolve(result);
-      })
-      .catch((error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
+      .then((result) => { clearTimeout(timer); resolve(result); })
+      .catch((error) => { clearTimeout(timer); reject(error); });
   });
 }
 
@@ -116,22 +113,18 @@ function parseSoilPayload(rawPayload: string): SoilData {
   };
 
   const hasAnySignal = [
-    soilData.temp,
-    soilData.moisture,
-    soilData.nitrogen,
-    soilData.phosphorus,
-    soilData.potassium,
-    soilData.ph,
-    soilData.conductivity,
-  ].some((value) => value !== 0);
+    soilData.temp, soilData.moisture, soilData.nitrogen,
+    soilData.phosphorus, soilData.potassium, soilData.ph, soilData.conductivity,
+  ].some((v) => v !== 0);
 
   if (!hasAnySignal) {
-    throw new Error('BLE_PARSE_ERROR: Parsed payload did not contain usable soil readings.');
+    throw new Error('BLE_PARSE_ERROR: Parsed payload contained no usable soil readings.');
   }
 
   return soilData;
 }
 
+// ─── Public Types ─────────────────────────────────────────────────────────────
 export type BLEStatus =
   | 'idle'
   | 'scanning'
@@ -165,6 +158,7 @@ export type BLECallbacks = {
   onError?: (message: string) => void;
 };
 
+// ─── BLE Service ──────────────────────────────────────────────────────────────
 class BLEService {
   private manager = new BleManager();
   private device: Device | null = null;
@@ -184,30 +178,18 @@ class BLEService {
   private currentBluetoothState: BleState | null = null;
   private currentWriteCharacteristic: Characteristic | null = null;
   private currentNotifyCharacteristic: Characteristic | null = null;
+  private isActivating = false;
 
-  get isConnected(): boolean {
-    return this.device !== null;
-  }
+  // ── Getters ────────────────────────────────────────────────────────────────
+  get isConnected(): boolean { return this.device !== null; }
+  get isScanning(): boolean { return this.scanResolver !== null; }
+  get latestSoilPayload(): AgniBlePayload | null { return this.latestPayload; }
+  get latestFailure(): string | null { return this.latestError; }
 
-  get isScanning(): boolean {
-    return this.scanResolver !== null;
-  }
-
-  get latestSoilPayload(): AgniBlePayload | null {
-    return this.latestPayload;
-  }
-
-  get latestFailure(): string | null {
-    return this.latestError;
-  }
+  // ── Internal Helpers ───────────────────────────────────────────────────────
 
   private emitLog(level: LogLevel, message: string): void {
-    const entry: LogEntry = {
-      level,
-      message,
-      time: new Date().toLocaleTimeString(),
-    };
-
+    const entry: LogEntry = { level, message, time: new Date().toLocaleTimeString() };
     this.callbacks?.onLog(entry);
     if (level === 'error') {
       this.latestError = message;
@@ -221,12 +203,9 @@ class BLEService {
   }
 
   private resetResponseTimer(): void {
-    if (this.pendingResponseTimer) {
-      clearTimeout(this.pendingResponseTimer);
-    }
-
+    if (this.pendingResponseTimer) clearTimeout(this.pendingResponseTimer);
     this.pendingResponseTimer = setTimeout(() => {
-      this.emitLog('warn', 'BLE read timed out waiting for Agni response.');
+      this.emitLog('warn', 'BLE read timed out — no response from Agni.');
       this.setStatus('error');
     }, READ_TIMEOUT_MS);
   }
@@ -238,6 +217,39 @@ class BLEService {
     }
   }
 
+  /**
+   * Waits for the user to dismiss the system Bluetooth dialog.
+   *
+   * Dual-trigger so it always resolves:
+   *  A) AppState changes back to 'active' — works on most Android devices.
+   *  B) 25 s safety timeout — handles overlay-style dialogs where AppState
+   *     never changes (some Android 12+ devices / ROMs), so we never get stuck.
+   *
+   * The listener must be registered BEFORE the intent fires to avoid a race
+   * condition where the user taps very quickly and the transition is missed.
+   */
+  private waitForUserAction(): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        appSub.remove();
+        clearTimeout(safety);
+        resolve();
+      };
+
+      const appSub = AppState.addEventListener('change', (state) => {
+        if (state === 'active') finish();
+      });
+
+      // Safety net — never leave the button stuck on 'Activating Bluetooth'.
+      const safety = setTimeout(finish, 25_000);
+    });
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
+
   startBluetoothStateWatcher(callbacks: BLECallbacks): void {
     this.callbacks = callbacks;
     this.bluetoothSubscription?.remove();
@@ -245,10 +257,10 @@ class BLEService {
       this.currentBluetoothState = state;
       this.callbacks?.onBluetoothState?.(state);
 
-      // Only set bluetooth_off if we aren't in the middle of activating it or if permissions are missing
+      // Do not override permission_denied or activating_bluetooth.
       if (
-        state !== 'PoweredOn' && 
-        this.currentStatus !== 'permission_denied' && 
+        state !== 'PoweredOn' &&
+        this.currentStatus !== 'permission_denied' &&
         this.currentStatus !== 'activating_bluetooth'
       ) {
         this.setStatus('bluetooth_off');
@@ -263,7 +275,7 @@ class BLEService {
     this.appStateSubscription = AppState.addEventListener('change', (nextState) => {
       this.activeAppState = nextState;
       if (nextState !== 'active' && this.isScanning) {
-        this.stopScan('App moved to background. Scan stopped safely.');
+        this.stopScan('Scan paused — app moved to background.');
       }
     });
   }
@@ -278,73 +290,82 @@ class BLEService {
     return (await this.getBluetoothState()) === 'PoweredOn';
   }
 
-  private isActivating = false;
+  async requestAndroidPermissions(): Promise<boolean> {
+    if (Platform.OS !== 'android') return true;
+
+    const sdkVersion = Number(Platform.Version);
+    const permissions =
+      sdkVersion >= 31
+        ? [
+            PERMISSIONS.ANDROID.BLUETOOTH_SCAN,
+            PERMISSIONS.ANDROID.BLUETOOTH_CONNECT,
+            PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION,
+          ]
+        : [PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION];
+
+    // Fast-path: skip the request prompt if already granted.
+    const current = await checkMultiple(permissions);
+    const alreadyGranted = permissions.every(
+      (p) => current[p] === RESULTS.GRANTED || current[p] === RESULTS.LIMITED
+    );
+    if (alreadyGranted) return true;
+
+    const results = await requestMultiple(permissions);
+    const allGranted = permissions.every(
+      (p) => results[p] === RESULTS.GRANTED || results[p] === RESULTS.LIMITED
+    );
+
+    if (!allGranted) this.setStatus('permission_denied');
+    return allGranted;
+  }
 
   /**
-   * Triggers the native Android Bluetooth activation dialog.
-    * Uses Android's request-enable intent with a library fallback.
+   * Displays the Android system Bluetooth enable dialog as fast as possible.
+   *
+   * Key design decisions:
+   *  1. Register the AppState listener BEFORE firing the intent — avoids a race
+   *     condition where a quick tap-and-deny is missed.
+   *  2. Fire the intent WITHOUT awaiting it — the dialog appears asynchronously
+   *     on the Android side, so we don't need to block on the bridge call.
+   *  3. Permissions and state are checked in parallel with the intent launch.
+   *  4. waitForUserAction() always resolves (AppState change OR 25 s timeout),
+   *     so the button text can never get stuck on 'Activating Bluetooth...'.
    */
   async requestEnableBluetooth(): Promise<boolean> {
-    if (Platform.OS !== 'android') {
-      return this.isBluetoothPoweredOn();
-    }
-
+    if (Platform.OS !== 'android') return this.isBluetoothPoweredOn();
     if (this.isActivating) return false;
+
     this.isActivating = true;
 
     try {
-      // 1. Fast-path: Check permissions and state immediately
-      const hasPermissions = await this.requestAndroidPermissions();
-      if (!hasPermissions) {
-        this.isActivating = false;
-        return false;
-      }
+      // 1. Register the listener NOW so we cannot miss a fast allow/deny.
+      const userActionPromise = this.waitForUserAction();
 
-      if (await this.isBluetoothPoweredOn()) {
-        this.setStatus('idle');
-        this.isActivating = false;
-        return true;
-      }
-
-      // 2. Trigger Activation Dialog
+      // 2. Update UI instantly.
       this.setStatus('activating_bluetooth');
+      this.emitLog('info', 'Requesting Bluetooth activation.');
 
-      // Small delay improves dialog reliability when screen transitions just occurred.
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      // 3. Fire the intent immediately — do NOT await.
+      //    Android shows the dialog asynchronously after receiving the intent.
+      Linking.sendIntent('android.bluetooth.adapter.action.REQUEST_ENABLE').catch(() => {
+        const mgr = this.manager as any;
+        if (typeof mgr.enable === 'function') mgr.enable().catch(() => {});
+      });
 
-      let promptTriggered = false;
-      try {
-        await Linking.sendIntent('android.bluetooth.adapter.action.REQUEST_ENABLE');
-        promptTriggered = true;
-      } catch {
-        // Ignore here and fall back to manager.enable().
-      }
+      // 4. Check permissions in parallel (fast-path skips the system prompt).
+      const hasPermissions = await this.requestAndroidPermissions();
+      if (!hasPermissions) return false;
 
-      // Fallback for devices or environments where sendIntent is unavailable.
-      if (!promptTriggered) {
-        const managerAny = this.manager as any;
-        if (typeof managerAny.enable === 'function') {
-          await managerAny.enable().catch(() => {
-            // Keep fallback silent; final state check below decides success.
-          });
-        }
-      }
+      // 5. Wait for the user to allow or deny (never hangs due to safety timeout).
+      await userActionPromise;
 
-      // Poll for up to 15 seconds because enabling hardware may not be immediate.
-      for (let i = 0; i < 30; i++) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-        if (await this.isBluetoothPoweredOn()) {
-          break;
-        }
-      }
-
-      // 3. Final State Sync
+      // 6. Sync actual hardware state and reset button text immediately.
       const finalState = await this.getBluetoothState();
-      const success = finalState === 'PoweredOn';
-      this.setStatus(success ? 'idle' : 'bluetooth_off');
-      return success;
+      const enabled = finalState === 'PoweredOn';
+      this.setStatus(enabled ? 'idle' : 'bluetooth_off');
+      return enabled;
 
-    } catch (error: any) {
+    } catch {
       this.setStatus('bluetooth_off');
       return false;
     } finally {
@@ -352,48 +373,19 @@ class BLEService {
     }
   }
 
-  /**
-   * Helper to request all required Android permissions for BLE operations.
-   */
-  async requestAndroidPermissions(): Promise<boolean> {
-    if (Platform.OS !== 'android') return true;
-
-    const sdkVersion = Number(Platform.Version);
-    const permissions = sdkVersion >= 31 
-      ? [
-          PERMISSIONS.ANDROID.BLUETOOTH_SCAN, 
-          PERMISSIONS.ANDROID.BLUETOOTH_CONNECT, 
-          PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION, 
-          PERMISSIONS.ANDROID.BLUETOOTH_ADVERTISE
-        ]
-      : [PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION];
-
-    const results = await requestMultiple(permissions);
-    const allGranted = permissions.every(p => results[p] === RESULTS.GRANTED || results[p] === RESULTS.LIMITED);
-    
-    if (!allGranted) {
-      this.setStatus('permission_denied');
-    }
-    
-    return allGranted;
-  }
-
   private matchesTargetDevice(device: Device): boolean {
     const advertised = (device.serviceUUIDs || []).map(normalizeUuid);
     const targetService = normalizeUuid(AGNI_PROTOCOL.serviceUuid);
-    const hasService = !isPlaceholder(AGNI_PROTOCOL.serviceUuid) && advertised.includes(targetService);
+    const hasService =
+      !isPlaceholder(AGNI_PROTOCOL.serviceUuid) && advertised.includes(targetService);
     const hasName =
       device.name?.toUpperCase().includes(DEVICE_NAME_KEYWORD) ||
       device.localName?.toUpperCase().includes(DEVICE_NAME_KEYWORD);
-
     return Boolean(hasService || hasName);
   }
 
   private clearScanState(): void {
-    if (this.scanTimer) {
-      clearTimeout(this.scanTimer);
-      this.scanTimer = null;
-    }
+    if (this.scanTimer) { clearTimeout(this.scanTimer); this.scanTimer = null; }
     this.scanResolver = null;
     this.scanRejecter = null;
   }
@@ -402,14 +394,12 @@ class BLEService {
     const state = await this.getBluetoothState();
     if (state !== 'PoweredOn') {
       this.setStatus('bluetooth_off');
-      throw new Error('BT_NOT_READY: Bluetooth is turned off.');
+      throw new Error('BT_NOT_READY: Bluetooth is off.');
     }
-
-    if (this.isScanning) {
-      throw new Error('SCAN_IN_PROGRESS');
-    }
+    if (this.isScanning) throw new Error('SCAN_IN_PROGRESS');
 
     this.setStatus('scanning');
+    this.emitLog('info', 'Scanning for Agni device...');
     this.lastSeenDevices.clear();
 
     return new Promise<Device>((resolve, reject) => {
@@ -418,16 +408,11 @@ class BLEService {
 
       this.scanTimer = setTimeout(() => {
         this.stopScan();
-        reject(new Error('SCAN_TIMEOUT: No Agni device found within scan timeout.'));
+        reject(new Error('SCAN_TIMEOUT: No Agni device found within the scan window.'));
       }, SCAN_TIMEOUT_MS);
 
       this.manager.startDeviceScan(null, { allowDuplicates: false }, (error, device) => {
-        if (error) {
-          this.stopScan();
-          reject(error);
-          return;
-        }
-
+        if (error) { this.stopScan(); reject(error); return; }
         if (!device || !this.matchesTargetDevice(device)) return;
         if (this.lastSeenDevices.has(device.id)) return;
 
@@ -439,15 +424,9 @@ class BLEService {
   }
 
   stopScan(reason?: string): void {
-    try {
-      this.manager.stopDeviceScan();
-    } catch {
-      // no-op
-    }
+    try { this.manager.stopDeviceScan(); } catch { /* no-op */ }
     this.clearScanState();
-    if (reason) {
-      this.emitLog('info', reason);
-    }
+    if (reason) this.emitLog('info', reason);
   }
 
   private async discoverProtocolCharacteristics(device: Device): Promise<void> {
@@ -455,27 +434,18 @@ class BLEService {
 
     const services = await device.services();
     const service = services.find(
-      (item) => normalizeUuid(item.uuid) === normalizeUuid(AGNI_PROTOCOL.serviceUuid)
+      (s) => normalizeUuid(s.uuid) === normalizeUuid(AGNI_PROTOCOL.serviceUuid)
     );
+    if (!service) throw new Error('BLE_PROTOCOL_GAP: Agni service UUID not found.');
 
-    if (!service) {
-      throw new Error('BLE_PROTOCOL_GAP: Agni service UUID not found on connected device.');
-    }
-
-    const characteristics = await service.characteristics();
+    const chars = await service.characteristics();
     this.currentWriteCharacteristic =
-      characteristics.find(
-        (item) =>
-          normalizeUuid(item.uuid) === normalizeUuid(AGNI_PROTOCOL.writeCharacteristicUuid)
-      ) || null;
+      chars.find((c) => normalizeUuid(c.uuid) === normalizeUuid(AGNI_PROTOCOL.writeCharacteristicUuid)) ?? null;
     this.currentNotifyCharacteristic =
-      characteristics.find(
-        (item) =>
-          normalizeUuid(item.uuid) === normalizeUuid(AGNI_PROTOCOL.notifyCharacteristicUuid)
-      ) || null;
+      chars.find((c) => normalizeUuid(c.uuid) === normalizeUuid(AGNI_PROTOCOL.notifyCharacteristicUuid)) ?? null;
 
     if (!this.currentWriteCharacteristic || !this.currentNotifyCharacteristic) {
-      throw new Error('BLE_PROTOCOL_GAP: Required Agni characteristics were not found.');
+      throw new Error('BLE_PROTOCOL_GAP: Required Agni characteristics not found.');
     }
   }
 
@@ -484,40 +454,32 @@ class BLEService {
     this.emitLog('info', `Connecting to ${device.name || device.localName || device.id}...`);
 
     const connected = await withTimeout(
-      device.connect({ autoConnect: false }).then((result) => result.discoverAllServicesAndCharacteristics()),
+      device.connect({ autoConnect: false }).then((d) => d.discoverAllServicesAndCharacteristics()),
       CONNECT_TIMEOUT_MS,
       'CONNECT_TIMEOUT: Agni connection timed out.'
     );
 
     this.device = connected;
     await this.discoverProtocolCharacteristics(connected);
-    connected.onDisconnected((error) => {
-      if (error) {
-        this.emitLog('warn', `Disconnected: ${error.message}`);
-      }
 
+    connected.onDisconnected((error) => {
+      if (error) this.emitLog('warn', `Disconnected: ${error.message}`);
       this.device = null;
       this.currentWriteCharacteristic = null;
       this.currentNotifyCharacteristic = null;
       this.notifySubscription?.remove();
       this.notifySubscription = null;
-
-      if (this.activeAppState === 'active') {
-        this.emitLog('warn', 'BLE connection dropped. Tap retry to reconnect.');
-        this.setStatus('error');
-      } else {
-        this.setStatus('idle');
-      }
+      this.setStatus(this.activeAppState === 'active' ? 'error' : 'idle');
     });
 
     this.setStatus('connected');
-    this.emitLog('info', 'Agni connected and services discovered.');
+    this.emitLog('info', 'Agni connected and ready.');
     return connected;
   }
 
   async subscribeToResponses(): Promise<void> {
     if (!this.device || !this.currentNotifyCharacteristic) {
-      throw new Error('BLE_NOT_READY: No notify/read characteristic available.');
+      throw new Error('BLE_NOT_READY: No notification characteristic available.');
     }
 
     this.notifySubscription?.remove();
@@ -530,7 +492,6 @@ class BLEService {
           this.setStatus('error');
           return;
         }
-
         if (!characteristic?.value) return;
 
         this.clearResponseTimer();
@@ -542,14 +503,13 @@ class BLEService {
             rawPayload,
             deviceId: this.device?.id || 'AGNI-SOIL-SENSOR',
           };
-
           this.latestPayload = payload;
           await saveSoilRecord(soilData).catch(() => {});
           this.callbacks?.onData(payload);
           this.emitLog('info', 'Soil data received from Agni.');
           this.setStatus('complete');
-        } catch (parseError: any) {
-          this.emitLog('error', parseError?.message || 'Failed to parse BLE payload.');
+        } catch (e: any) {
+          this.emitLog('error', e?.message || 'Failed to parse Agni payload.');
           this.setStatus('error');
         }
       }
@@ -558,22 +518,18 @@ class BLEService {
 
   async requestSoilReading(): Promise<void> {
     ensureProtocolConfigured();
-
     if (!this.device || !this.currentWriteCharacteristic) {
       throw new Error('BLE_NOT_READY: Connect to Agni before requesting data.');
     }
-
     await this.subscribeToResponses();
     this.setStatus('transferring');
-    this.emitLog('info', 'Sending Agni command over BLE...');
-
-    const encodedCommand = toBase64Command(AGNI_PROTOCOL.command, AGNI_PROTOCOL.commandEncoding);
+    this.emitLog('info', 'Requesting soil reading from Agni...');
+    const encoded = toBase64Command(AGNI_PROTOCOL.command, AGNI_PROTOCOL.commandEncoding);
     this.resetResponseTimer();
-
     await this.device.writeCharacteristicWithResponseForService(
       AGNI_PROTOCOL.serviceUuid,
       AGNI_PROTOCOL.writeCharacteristicUuid,
-      encodedCommand
+      encoded
     );
   }
 
@@ -583,18 +539,14 @@ class BLEService {
     this.latestPayload = null;
 
     const hasPerms = await this.requestAndroidPermissions();
-    if (!hasPerms) throw new Error('PERMISSION_DENIED: Required Bluetooth/Location permissions are missing.');
+    if (!hasPerms) throw new Error('PERMISSION_DENIED: Bluetooth permissions not granted.');
 
     const device = await this.scanForDevice();
     await this.connectToDevice(device);
     await this.requestSoilReading();
-
     return this.latestPayload;
   }
 
-  /**
-   * Cleans up all subscriptions and disconnects from device.
-   */
   async disconnect(): Promise<void> {
     this.stopScan();
     this.clearResponseTimer();
@@ -603,10 +555,8 @@ class BLEService {
 
     if (this.device) {
       try {
-        if (await this.device.isConnected()) {
-          await this.device.cancelConnection();
-        }
-      } catch { /* Ignore */ }
+        if (await this.device.isConnected()) await this.device.cancelConnection();
+      } catch { /* ignored */ }
     }
 
     this.device = null;
@@ -616,9 +566,6 @@ class BLEService {
     this.setStatus('idle');
   }
 
-  /**
-   * Full cleanup for component unmounting.
-   */
   destroy(): void {
     this.bluetoothSubscription?.remove();
     this.appStateSubscription?.remove();
@@ -628,5 +575,3 @@ class BLEService {
 }
 
 export const bleService = new BLEService();
-
-

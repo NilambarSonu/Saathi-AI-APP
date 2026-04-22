@@ -38,12 +38,6 @@ function friendlyError(raw: string): string {
   if (raw.startsWith('BT_NOT_READY:')) {
     return 'Bluetooth is OFF. Please turn Bluetooth on and try again.';
   }
-  if (raw.startsWith('BT_DENIED:')) {
-    return 'Bluetooth activation was cancelled. Please allow it to scan for Agni.';
-  }
-  if (raw.startsWith('BT_PROMPT_TIMEOUT:')) {
-    return 'Bluetooth activation prompt timed out. Please turn on Bluetooth manually in Settings.';
-  }
   if (raw.startsWith('SCAN_TIMEOUT:')) {
     return 'No Agni device found nearby. Make sure it is powered on and in range.';
   }
@@ -51,7 +45,7 @@ function friendlyError(raw: string): string {
     return 'Agni took too long to connect. Please retry.';
   }
   if (raw.startsWith('BLE_PROTOCOL_GAP:')) {
-    return 'BLE protocol is not fully configured yet. UUIDs, command, and response format are still placeholders.';
+    return 'BLE protocol is not fully configured yet. UUIDs and command are still placeholders.';
   }
   return raw;
 }
@@ -76,30 +70,18 @@ export function useBLE(): UseBLEReturn {
 
   const addLog = useCallback((entry: LogEntry) => {
     if (!isMounted.current) return;
-    setLogs((previous) => [entry, ...previous].slice(0, 80));
+    setLogs((prev) => [entry, ...prev].slice(0, 80));
   }, []);
 
   const handleError = useCallback(
     (message: string) => {
       if (!isMounted.current) return;
-      const nextMessage = friendlyError(message);
-      setLatestError(nextMessage);
-      addLog({
-        level: 'error',
-        message: nextMessage,
-        time: new Date().toLocaleTimeString(),
-      });
+      const friendly = friendlyError(message);
+      setLatestError(friendly);
+      addLog({ level: 'error', message: friendly, time: new Date().toLocaleTimeString() });
     },
     [addLog]
   );
-
-  // Auto-show logs on error (optional, but helpful for debugging)
-  useEffect(() => {
-    if (status === 'error' || latestError) {
-      // We don't force setShowLogs here because it's in the Screen, 
-      // but we could add a prop if we wanted to.
-    }
-  }, [status, latestError]);
 
   const handleData = useCallback((payload: AgniBlePayload) => {
     if (!isMounted.current) return;
@@ -108,50 +90,9 @@ export function useBLE(): UseBLEReturn {
     processSoilDataRef.current(payload);
   }, []);
 
-  const bindCallbacks = useCallback(() => {
-    bleService.startBluetoothStateWatcher({
-      onStatusChange: (nextStatus) => {
-        if (!isMounted.current) return;
-        setStatus(nextStatus);
-        if (nextStatus === 'bluetooth_off') setBluetoothOffModalVisible(false);
-      },
-      onLog: addLog,
-      onData: handleData,
-      onBluetoothState: (state) => {
-        if (!isMounted.current) return;
-        setBluetoothState(state);
-        if (state === 'PoweredOn') {
-          setBluetoothOffModalVisible(false);
-          if (connectIntentRef.current) {
-            void connect();
-          }
-        }
-      },
-      onError: handleError,
-    });
-  }, [addLog, handleData, handleError]);
-
-  useEffect(() => {
-    isMounted.current = true;
-    bindCallbacks();
-
-    void (async () => {
-      const hasIntent = await AsyncStorage.getItem(BLE_CONNECT_INTENT_KEY);
-      if (hasIntent === '1') {
-        connectIntentRef.current = true;
-      }
-    })();
-
-    return () => {
-      isMounted.current = false;
-      void bleService.disconnect();
-    };
-  }, [bindCallbacks]);
-
+  // connect is defined before bindCallbacks so the PoweredOn auto-connect works.
   const connect = useCallback(async () => {
-    if (status === 'scanning' || status === 'connecting' || status === 'transferring') {
-      return;
-    }
+    if (status === 'scanning' || status === 'connecting' || status === 'transferring') return;
 
     setSoilData(null);
     setLogs([]);
@@ -177,7 +118,6 @@ export function useBLE(): UseBLEReturn {
         setPermissionDenied(true);
         setStatus('permission_denied');
       } else if (message.startsWith('BT_NOT_READY:')) {
-        setBluetoothOffModalVisible(false);
         setStatus('bluetooth_off');
       } else {
         setStatus('error');
@@ -187,17 +127,52 @@ export function useBLE(): UseBLEReturn {
     }
   }, [addLog, handleData, handleError, status]);
 
+  const bindCallbacks = useCallback(() => {
+    bleService.startBluetoothStateWatcher({
+      onStatusChange: (nextStatus) => {
+        if (!isMounted.current) return;
+        setStatus(nextStatus);
+      },
+      onLog: addLog,
+      onData: handleData,
+      onBluetoothState: (state) => {
+        if (!isMounted.current) return;
+        setBluetoothState(state);
+        if (state === 'PoweredOn') {
+          setBluetoothOffModalVisible(false);
+          // Auto-resume a pending connect intent when Bluetooth turns on.
+          if (connectIntentRef.current) {
+            void connect();
+          }
+        }
+      },
+      onError: handleError,
+    });
+  }, [addLog, handleData, handleError, connect]);
+
+  useEffect(() => {
+    isMounted.current = true;
+    bindCallbacks();
+
+    // Restore any pending connect intent from a previous session.
+    void (async () => {
+      const hasIntent = await AsyncStorage.getItem(BLE_CONNECT_INTENT_KEY);
+      if (hasIntent === '1') connectIntentRef.current = true;
+    })();
+
+    return () => {
+      isMounted.current = false;
+      void bleService.disconnect();
+    };
+  }, [bindCallbacks]);
+
   const disconnect = useCallback(async () => {
     connectIntentRef.current = false;
     await AsyncStorage.removeItem(BLE_CONNECT_INTENT_KEY);
     await bleService.disconnect();
     if (!isMounted.current) return;
     setStatus('idle');
-    addLog({
-      level: 'info',
-      message: 'BLE session ended.',
-      time: new Date().toLocaleTimeString(),
-    });
+    addLog({ level: 'info', message: 'BLE session ended.', time: new Date().toLocaleTimeString() });
   }, [addLog]);
 
   const retryPermission = useCallback(async () => {
@@ -210,19 +185,21 @@ export function useBLE(): UseBLEReturn {
     await Linking.openSettings();
   }, []);
 
+  /**
+   * Called when the user taps the "Waiting for Bluetooth" button.
+   * Fires the system dialog IMMEDIATELY, then:
+   *  - If allowed  → auto-starts BLE scan.
+   *  - If denied   → resets status to bluetooth_off (no stuck "Activating..." text).
+   */
   const enableBluetooth = useCallback(async () => {
     try {
       const enabled = await bleService.requestEnableBluetooth();
       if (enabled) {
         setBluetoothOffModalVisible(false);
         setLatestError(null);
-        // Automatically start connecting once enabled
         void connect();
-      } else {
-        // If it returned false, it was either denied or timed out.
-        // The service already set the status to bluetooth_off.
-        setBluetoothOffModalVisible(false);
       }
+      // If not enabled, bleService already set status to bluetooth_off.
       return enabled;
     } catch (error: any) {
       const message = error?.message || '';
@@ -231,7 +208,7 @@ export function useBLE(): UseBLEReturn {
         setStatus('permission_denied');
       } else {
         handleError(message);
-        setStatus('error');
+        setStatus('bluetooth_off');
       }
       return false;
     }
@@ -263,5 +240,3 @@ export function useBLE(): UseBLEReturn {
     cancelBluetoothPrompt,
   };
 }
-
-
