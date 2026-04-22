@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { hideTabBar, showTabBar } from '@/constants/Animations';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
-  TextInput, Alert, ActivityIndicator, Switch, Platform, Image
+  TextInput, Alert, ActivityIndicator, Switch,
+  Platform, Image, Animated, Modal,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors } from '@/constants/Colors';
@@ -14,32 +16,78 @@ import { logout } from '@/features/auth/services/auth';
 import { getUserProfile } from '@/features/auth/services/user';
 
 
-// ─── Helpers ────────────────────────────────────────────────
-function getProviderLabel(provider?: string) {
-  if (!provider || provider === 'local') return { label: 'Email', color: Colors.primary };
-  if (provider === 'google') return { label: 'Google', color: '#DB4437' };
-  if (provider === 'facebook') return { label: 'Facebook', color: '#1877F2' };
-  return { label: provider, color: Colors.textSecondary };
-}
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const getFirstName = (user: any): string => {
+  const raw = user?.name || user?.username || user?.email?.split('@')[0] || 'Farmer';
+  const n = raw.split(/[\s_]+/)[0];
+  return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
+};
 
-function getAccountAge(createdAt?: string) {
-  if (!createdAt) return 'N/A';
+const getInitials = (user: any): string => {
+  const name = user?.name || user?.username || 'F';
+  return name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase();
+};
+
+const getProfilePictureUrl = (filename: string | null | undefined): string | null => {
+  if (!filename) return null;
+  const filenameMap: Record<string, string> = {
+    'farmer.png': 'farmer.png',
+    'farmer_1.png': 'farmer (1).png',
+    'farmer_2.png': 'farmer (2).png',
+    'farmer_3.png': 'farmer (3).png',
+    'farmer_4.png': 'farmer (4).png',
+    'farmer (1).png': 'farmer (1).png',
+    'farmer (2).png': 'farmer (2).png',
+    'farmer (3).png': 'farmer (3).png',
+    'farmer (4).png': 'farmer (4).png',
+  };
+  const mappedName = filenameMap[filename] || filename;
+  if (filename.startsWith('http')) return filename;
+  const encodedName = encodeURI(mappedName);
+  return `https://saathiai.org/Farmer_Icon/${encodedName}`;
+};
+
+const getUserAvatar = (u: any): string | null => {
+  const filename = u?.profilePicture || u?.profile_picture || u?.avatar_url || u?.profile_image;
+  return getProfilePictureUrl(filename);
+};
+
+const getProviderLabel = (provider?: string) => {
+  if (!provider || provider === 'local') return { label: 'Email', color: Colors.primary, icon: 'mail-outline' };
+  if (provider === 'google') return { label: 'Google', color: '#DB4437', icon: 'logo-google' };
+  if (provider === 'facebook') return { label: 'Facebook', color: '#1877F2', icon: 'logo-facebook' };
+  return { label: provider, color: Colors.textSecondary, icon: 'person-outline' };
+};
+
+const getAccountAge = (createdAt?: string) => {
+  if (!createdAt) return 'New member';
   const diff = Math.ceil(Math.abs(Date.now() - new Date(createdAt).getTime()) / 86400000);
-  if (diff < 30) return `${diff} day${diff !== 1 ? 's' : ''}`;
-  if (diff < 365) return `${Math.floor(diff / 30)} month${Math.floor(diff / 30) !== 1 ? 's' : ''}`;
-  return `${Math.floor(diff / 365)} year${Math.floor(diff / 365) !== 1 ? 's' : ''}`;
-}
+  if (diff < 30) return `${diff}d member`;
+  if (diff < 365) return `${Math.floor(diff / 30)}mo member`;
+  return `${Math.floor(diff / 365)}yr member`;
+};
 
-// ─── Section Card ────────────────────────────────────────────
+const mergeUser = (base: any, patch: any) => {
+  const merged = { ...(base || {}), ...(patch || {}) };
+  return {
+    ...merged,
+    name: merged?.name || merged?.full_name || merged?.username || '',
+    email: merged?.email || base?.email || '',
+    avatar_url: merged?.profilePicture || merged?.avatar_url || merged?.profile_image || merged?.profile_picture || null,
+  };
+};
+
+
+// ─── Section Card ─────────────────────────────────────────────────────────────
 function SectionCard({ title, icon, color, children }: {
   title: string; icon: string; color: string; children: React.ReactNode;
 }) {
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
-        <View style={[styles.cardIconBg, { backgroundColor: color + '20' }]}>
-          <Ionicons name={icon as any} size={18} color={color} />
-        </View>
+        <LinearGradient colors={[color + '30', color + '10']} style={styles.cardIconBg}>
+          <Ionicons name={icon as any} size={17} color={color} />
+        </LinearGradient>
         <Text style={styles.cardTitle}>{title}</Text>
       </View>
       {children}
@@ -47,52 +95,34 @@ function SectionCard({ title, icon, color, children }: {
   );
 }
 
-// ─── Field Row ───────────────────────────────────────────────
-const getFirstName = (user: any): string => {
-  const raw = user?.name || user?.username || user?.email?.split('@')[0] || 'Farmer';
-  const n = raw.split(/[\s_]+/)[0];
-  return n.charAt(0).toUpperCase() + n.slice(1).toLowerCase();
-};
-
-const getUserAvatar = (u: any): string | null => {
-  return u?.avatar_url || u?.profile_image || u?.profile_picture || null;
-};
-
-const mergeUser = (base: any, patch: any) => {
-  const merged = { ...(base || {}), ...(patch || {}) };
-  const fullName = merged?.name || merged?.full_name || merged?.displayName || merged?.username || base?.name || base?.username || '';
-  const email = merged?.email || merged?.emailAddress || base?.email || '';
-  return {
-    ...merged,
-    name: fullName,
-    username: merged?.username || fullName,
-    email,
-    avatar_url: merged?.avatar_url || merged?.profile_image || merged?.profile_picture || merged?.picture || null,
-    profile_image: merged?.profile_image || merged?.avatar_url || merged?.profile_picture || merged?.picture || null,
-    profile_picture: merged?.profile_picture || merged?.avatar_url || merged?.profile_image || merged?.picture || null,
-  };
-};
-
-function FieldRow({ label, value, onChangeText, readOnly, placeholder }: {
+// ─── Field Row ────────────────────────────────────────────────────────────────
+function FieldRow({ label, value, onChangeText, readOnly, placeholder, icon }: {
   label: string; value: string; onChangeText?: (v: string) => void;
-  readOnly?: boolean; placeholder?: string;
+  readOnly?: boolean; placeholder?: string; icon?: string;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={styles.fieldRow}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={[styles.fieldInput, readOnly && styles.fieldInputReadOnly]}
-        value={value}
-        onChangeText={onChangeText}
-        editable={!readOnly}
-        placeholder={placeholder || label}
-        placeholderTextColor={Colors.textMuted}
-      />
+      <View style={[styles.fieldInputWrap, focused && styles.fieldInputFocused, readOnly && styles.fieldInputReadOnlyWrap]}>
+        {icon && <Ionicons name={icon as any} size={15} color={readOnly ? Colors.textMuted : Colors.textSecondary} style={{ marginRight: 8 }} />}
+        <TextInput
+          style={[styles.fieldInput, readOnly && styles.fieldInputReadOnly]}
+          value={value}
+          onChangeText={onChangeText}
+          editable={!readOnly}
+          placeholder={placeholder || label}
+          placeholderTextColor={Colors.textMuted}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+        {readOnly && <Ionicons name="lock-closed-outline" size={13} color={Colors.textMuted} />}
+      </View>
     </View>
   );
 }
 
-// ─── Toggle Row ──────────────────────────────────────────────
+// ─── Toggle Row ───────────────────────────────────────────────────────────────
 function ToggleRow({ label, description, value, onToggle, loading }: {
   label: string; description: string; value: boolean;
   onToggle: (v: boolean) => void; loading?: boolean;
@@ -109,32 +139,45 @@ function ToggleRow({ label, description, value, onToggle, loading }: {
         <Switch
           value={value}
           onValueChange={onToggle}
-          trackColor={{ false: Colors.borderLight, true: Colors.primary + '70' }}
-          thumbColor={value ? Colors.primary : Colors.textMuted}
+          trackColor={{ false: Colors.borderLight, true: Colors.primary + '80' }}
+          thumbColor={value ? Colors.primary : '#ccc'}
         />
       )}
     </View>
   );
 }
 
-// ─── Action Row ──────────────────────────────────────────────
-function ActionRow({ label, icon, onPress, danger }: {
-  label: string; icon: string; onPress: () => void; danger?: boolean;
+// ─── Action Row ───────────────────────────────────────────────────────────────
+function ActionRow({ label, sublabel, icon, onPress, danger, badge }: {
+  label: string; sublabel?: string; icon: string; onPress: () => void; danger?: boolean; badge?: string;
 }) {
+  const scale = useRef(new Animated.Value(1)).current;
+  const onPressIn = () => Animated.spring(scale, { toValue: 0.97, useNativeDriver: true }).start();
+  const onPressOut = () => Animated.spring(scale, { toValue: 1, useNativeDriver: true }).start();
+
   return (
-    <Pressable
-      style={({ pressed }) => [styles.actionRow, pressed && { opacity: 0.7 }]}
-      onPress={onPress}
-    >
-      <Ionicons name={icon as any} size={18} color={danger ? Colors.error : Colors.textSecondary} />
-      <Text style={[styles.actionLabel, danger && { color: Colors.error }]}>{label}</Text>
-      <Ionicons name="chevron-forward" size={16} color={danger ? Colors.error : Colors.textMuted} />
-    </Pressable>
+    <Animated.View style={{ transform: [{ scale }] }}>
+      <Pressable style={styles.actionRow} onPress={onPress} onPressIn={onPressIn} onPressOut={onPressOut}>
+        <View style={[styles.actionIconBg, danger && { backgroundColor: Colors.error + '18' }]}>
+          <Ionicons name={icon as any} size={17} color={danger ? Colors.error : Colors.textSecondary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.actionLabel, danger && { color: Colors.error }]}>{label}</Text>
+          {sublabel && <Text style={styles.actionSublabel}>{sublabel}</Text>}
+        </View>
+        {badge && (
+          <View style={styles.actionBadge}>
+            <Text style={styles.actionBadgeText}>{badge}</Text>
+          </View>
+        )}
+        <Ionicons name="chevron-forward" size={15} color={danger ? Colors.error + '80' : Colors.textMuted} />
+      </Pressable>
+    </Animated.View>
   );
 }
 
-// ─── Main Component ──────────────────────────────────────────
-export default function AccountScreen() {
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+export default function ProfileScreen() {
   const router = useRouter();
   const { user, setUser, clearUser } = useAuthStore();
 
@@ -143,32 +186,52 @@ export default function AccountScreen() {
   const [originalName, setOriginalName] = useState(user?.name || user?.username || '');
   const [originalLocation, setOriginalLocation] = useState(user?.location || '');
 
+  const [avatarFailed, setAvatarFailed] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [aiPricingEnabled, setAiPricingEnabled] = useState(false);
   const [aiPricingLoading, setAiPricingLoading] = useState(false);
 
+  const [privacySettings, setPrivacySettings] = useState({
+    profileVisibility: true,
+    dataSharing: true,
+    analytics: true,
+    emailNotifications: true,
+    marketingEmails: false,
+  });
+  const [isPrivacyLoading, setIsPrivacyLoading] = useState(false);
+  const [isPrivacyModalVisible, setPrivacyModalVisible] = useState(false);
+
+  const headerAnim = useRef(new Animated.Value(0)).current;
+
   const hasChanges = name !== originalName || location !== originalLocation;
   const provider = getProviderLabel(user?.provider);
   const isOAuthUser = user?.provider && user.provider !== 'local';
+  const avatarUri = getUserAvatar(user);
 
   useEffect(() => {
-    // Fetch User Profile Data
+    Animated.timing(headerAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+
     getUserProfile().then(data => {
-      // Safely fold the data into our local state if it exists
       if (data) {
-        const nextUser = mergeUser(user, data);
-        setUser(nextUser);
-        setName(nextUser.name || nextUser.username || '');
-        setOriginalName(nextUser.name || nextUser.username || '');
-        setLocation(nextUser.location || '');
-        setOriginalLocation(nextUser.location || '');
+        const next = mergeUser(user, data);
+        setUser(next);
+        setName(next.name || next.username || '');
+        setOriginalName(next.name || next.username || '');
+        setLocation(next.location || '');
+        setOriginalLocation(next.location || '');
+        setAvatarFailed(false);
       }
     }).catch(() => {});
 
-    // Fetch AI setting
     apiCall<{ aiPricingEnabled: boolean }>('/settings')
-      .then(data => setAiPricingEnabled(data.aiPricingEnabled))
+      .then(d => setAiPricingEnabled(d.aiPricingEnabled))
+      .catch(() => {});
+
+    apiCall<any>('/privacy-settings')
+      .then(d => {
+        if (d && Object.keys(d).length > 0) setPrivacySettings(d);
+      })
       .catch(() => {});
   }, []);
 
@@ -176,7 +239,6 @@ export default function AccountScreen() {
     if (!hasChanges) return;
     setIsSaving(true);
     try {
-      // Backend contract: PUT /api/user — update profile fields
       const result = await apiCall<{ user: any }>('/user', {
         method: 'PUT',
         body: JSON.stringify({ name, username: name, location }),
@@ -184,7 +246,7 @@ export default function AccountScreen() {
       setUser(mergeUser(user, result?.user || { name, username: name, location }));
       setOriginalName(name);
       setOriginalLocation(location);
-      Alert.alert('Saved', 'Your profile has been updated.');
+      Alert.alert('✅ Saved', 'Your profile has been updated.');
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Failed to save changes.');
     } finally {
@@ -195,13 +257,10 @@ export default function AccountScreen() {
   const handleAiPricingToggle = async (val: boolean) => {
     setAiPricingLoading(true);
     try {
-      await apiCall('/settings', {
-        method: 'POST',
-        body: JSON.stringify({ aiPricingEnabled: val }),
-      });
+      await apiCall('/settings', { method: 'POST', body: JSON.stringify({ aiPricingEnabled: val }) });
       setAiPricingEnabled(val);
     } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to update setting.');
+      Alert.alert('Error', e.message || 'Failed to update.');
     } finally {
       setAiPricingLoading(false);
     }
@@ -226,16 +285,13 @@ export default function AccountScreen() {
       Alert.alert('Not Available', `Password change is not available for ${provider.label} accounts.`);
       return;
     }
-    Alert.alert('Change Password', 'A password reset link will be sent to your email.', [
+    Alert.alert('Change Password', 'A reset link will be sent to your email.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Send Email', onPress: async () => {
           try {
-            await apiCall('/auth/forgot-password', {
-              method: 'POST',
-              body: JSON.stringify({ email: user?.email }),
-            });
-            Alert.alert('Email Sent', 'Check your email for the password reset link.');
+            await apiCall('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email: user?.email }) });
+            Alert.alert('📧 Email Sent', 'Check your inbox for the reset link.');
           } catch (e: any) {
             Alert.alert('Error', e.message || 'Failed to send reset email.');
           }
@@ -244,15 +300,98 @@ export default function AccountScreen() {
     ]);
   };
 
+  const handlePrivacyToggle = async (key: string, val: boolean) => {
+    setIsPrivacyLoading(true);
+    const nextSettings = { ...privacySettings, [key as keyof typeof privacySettings]: val };
+    setPrivacySettings(nextSettings);
+    try {
+      await apiCall('/privacy-settings', { method: 'PUT', body: JSON.stringify(nextSettings) });
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to update privacy settings.');
+      setPrivacySettings({ ...privacySettings, [key as keyof typeof privacySettings]: !val });
+    } finally {
+      setIsPrivacyLoading(false);
+    }
+  };
+
+  const handleExportData = () => {
+    Alert.alert('Export Data', 'Your historical data export link will be generated.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Export JSON', onPress: () => Alert.alert('Exporting', 'Your data is being prepared and will be downloaded shortly.') },
+    ]);
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert('Delete Account', 'Are you sure you want to permanently delete your account? This action cannot be undone.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete Permanently', style: 'destructive', onPress: async () => {
+          try {
+            await apiCall('/user', { method: 'DELETE' });
+            await logout();
+            clearUser();
+            router.replace('/(auth)/login');
+          } catch (e: any) {
+            Alert.alert('Error', e.message || 'Failed to delete account.');
+          }
+        }
+      },
+    ]);
+  };
+
   return (
+    <View style={styles.root}>
 
-      <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>My Account</Text>
-        <Text style={styles.headerSub}>Manage your profile and preferences</Text>
-      </View>
+      {/* ── Hero Header ───────────────────────────────────────── */}
+      <LinearGradient
+        colors={['#0A3D1F', '#1A6B3C', '#2D9B5A']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
+        <View style={styles.heroBubble1} />
+        <View style={styles.heroBubble2} />
 
+        <Animated.View style={[styles.heroContent, { opacity: headerAnim, transform: [{ translateY: headerAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }] }]}>
+          {/* Avatar — centred */}
+          <View style={styles.avatarRing}>
+            {!avatarFailed && avatarUri ? (
+              <Image 
+                source={{ uri: avatarUri }} 
+                style={styles.avatarImg} 
+                onError={() => setAvatarFailed(true)}
+              />
+            ) : (
+              <LinearGradient colors={['#4ade80', '#16a34a']} style={styles.avatarImg}>
+                <Text style={styles.avatarInitials}>{getInitials(user)}</Text>
+              </LinearGradient>
+            )}
+            <View style={styles.onlineDot} />
+          </View>
+
+          {/* Name, email & badges below avatar */}
+          <Text style={styles.heroName} numberOfLines={1}>{user?.name || user?.username || 'Kisan'}</Text>
+          <Text style={styles.heroEmail} numberOfLines={1}>{user?.email || ''}</Text>
+          <View style={styles.heroBadgeRow}>
+            <View style={styles.heroBadge}>
+              <Ionicons name={provider.icon as any} size={10} color="#fff" />
+              <Text style={styles.heroBadgeText}>{provider.label}</Text>
+            </View>
+            <View style={styles.heroBadge}>
+              <Ionicons name="time-outline" size={10} color="#fff" />
+              <Text style={styles.heroBadgeText}>{getAccountAge(user?.created_at)}</Text>
+            </View>
+            {user?.location && (
+              <View style={styles.heroBadge}>
+                <Ionicons name="location-outline" size={10} color="#fff" />
+                <Text style={styles.heroBadgeText}>{user.location}</Text>
+              </View>
+            )}
+          </View>
+        </Animated.View>
+      </LinearGradient>
+
+      {/* ── Scrollable Body ───────────────────────────────────── */}
       <ScrollView
         contentContainerStyle={styles.scroll}
         showsVerticalScrollIndicator={false}
@@ -263,49 +402,24 @@ export default function AccountScreen() {
         scrollEventThrottle={16}
       >
 
-        {/* Profile Avatar Card */}
-        <View style={styles.profileCard}>
-          <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              {getUserAvatar(user) ? (
-                <Image source={{ uri: getUserAvatar(user) as string }} style={{ width: 64, height: 64, borderRadius: 32 }} />
-              ) : (
-                <Image source={{ uri: 'https://ui-avatars.com/api/?background=1A5C35&color=fff&name=' + encodeURIComponent(getFirstName(user)) }} style={{ width: 64, height: 64, borderRadius: 32 }} />
-              )}
-            </View>
-            <View style={styles.onlineDot} />
-          </View>
-          <View style={styles.profileInfo}>
-            <View style={styles.profileNameRow}>
-              <Text style={styles.profileName}>{user?.name || user?.username || 'User'}</Text>
-              <View style={[styles.providerBadge, { backgroundColor: provider.color + '20' }]}>
-                <Text style={[styles.providerText, { color: provider.color }]}>{provider.label}</Text>
-              </View>
-            </View>
-            <Text style={styles.profileEmail} numberOfLines={1} ellipsizeMode="tail">{user?.email || 'No email'}</Text>
-            {user?.location ? (
-              <Text style={styles.profileLocation}>📍 {user.location}</Text>
-            ) : null}
-          </View>
-          <View style={styles.memberBadge}>
-            <View style={styles.memberActive}>
-              <Text style={styles.memberActiveText}>● Active</Text>
-            </View>
-            <Text style={styles.memberAge}>Member {getAccountAge(user?.created_at)}</Text>
-          </View>
-        </View>
-
         {/* Profile Info */}
-        <SectionCard title="Profile Information" icon="person-outline" color={Colors.primary}>
-          <FieldRow label="Full Name" value={name} onChangeText={setName} placeholder="Enter your full name" />
-          <FieldRow label="Email" value={user?.email || ''} readOnly />
-          <FieldRow label="Phone" value={user?.phone || 'Not provided'} readOnly />
-          <FieldRow label="Location / City" value={location} onChangeText={setLocation} placeholder="e.g. Balasore, Odisha" />
+        <SectionCard title="Account Settings" icon="person-outline" color={Colors.primary}>
+          <FieldRow label="Full Name" value={name} onChangeText={setName} placeholder="Enter your full name" icon="person-outline" />
+          <FieldRow label="Email Address" value={user?.email || ''} readOnly icon="mail-outline" />
+          <FieldRow label="Phone Number" value={user?.phone || 'Not provided'} readOnly icon="call-outline" />
+          <FieldRow label="Village / City" value={location} onChangeText={setLocation} placeholder="e.g. Balasore, Odisha" icon="location-outline" />
+          
+          <ActionRow 
+            label="Language Preferences" 
+            sublabel={user?.preferredLanguage || 'English'} 
+            icon="language-outline" 
+            onPress={() => Alert.alert('Language', 'Language selection coming soon!')} 
+          />
 
           {hasChanges && (
             <View style={styles.unsavedBanner}>
-              <Ionicons name="alert-circle-outline" size={16} color="#92400e" />
-              <Text style={styles.unsavedText}>You have unsaved changes</Text>
+              <Ionicons name="alert-circle-outline" size={15} color="#92400e" />
+              <Text style={styles.unsavedText}>Unsaved changes</Text>
               <Pressable onPress={() => { setName(originalName); setLocation(originalLocation); }}>
                 <Text style={styles.discardText}>Discard</Text>
               </Pressable>
@@ -313,63 +427,95 @@ export default function AccountScreen() {
           )}
 
           <Pressable
-            style={[styles.saveBtn, (!hasChanges || isSaving) && { opacity: 0.5 }]}
+            style={[styles.saveBtn, (!hasChanges || isSaving) && { opacity: 0.4 }]}
             onPress={handleSave}
             disabled={!hasChanges || isSaving}
           >
-            {isSaving ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <Ionicons name="save-outline" size={18} color="#fff" />
-                <Text style={styles.saveBtnText}>Save Changes</Text>
-              </>
-            )}
+            <LinearGradient colors={['#1A6B3C', '#2D9B5A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.saveBtnGrad}>
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="save-outline" size={17} color="#fff" />
+                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                </>
+              )}
+            </LinearGradient>
           </Pressable>
         </SectionCard>
 
         {/* Security */}
-        <SectionCard title="Security" icon="lock-closed-outline" color={Colors.blue}>
+        <SectionCard title="Security" icon="lock-closed-outline" color="#3b82f6">
           <ActionRow
             label="Change Password"
+            sublabel={isOAuthUser ? `Managed by ${provider.label}` : 'Send reset link to your email'}
             icon="key-outline"
             onPress={handleChangePassword}
           />
-          {isOAuthUser && (
-            <Text style={styles.oauthNote}>
-              ℹ️ Password change unavailable for {provider.label} accounts.
-            </Text>
-          )}
         </SectionCard>
 
         {/* AI Settings */}
-        <SectionCard title="AI Settings" icon="sparkles-outline" color={Colors.purple}>
+        <SectionCard title="AI Settings" icon="sparkles-outline" color="#a855f7">
           <ToggleRow
             label="AI Pipeline Control"
-            description="Enable or disable automated AI analysis when syncing data from the Agni device."
+            description="Enable automated AI analysis when syncing data from your Agni soil sensor."
             value={aiPricingEnabled}
             onToggle={handleAiPricingToggle}
             loading={aiPricingLoading}
           />
         </SectionCard>
 
-        {/* Quick Links */}
-        <SectionCard title="Quick Links" icon="apps-outline" color={Colors.amber}>
-          <ActionRow label="App Settings" icon="settings-outline" onPress={() => router.push('/(app)/settings')} />
-          <ActionRow label="Chat History" icon="chatbubbles-outline" onPress={() => router.push('/(app)/chat-history')} />
-          <ActionRow label="Buy Agni Device" icon="cart-outline" onPress={() => router.push('/(app)/buy-agni')} />
-          <ActionRow label="About Saathi AI" icon="information-circle-outline" onPress={() => router.push('/(app)/about')} />
+        {/* Privacy & Data Settings */}
+        <SectionCard title="Privacy & Data Settings" icon="shield-checkmark-outline" color="#10b981">
+          <ActionRow
+            label="Manage Privacy & Data"
+            sublabel="Visibility, sharing, analytics, and emails"
+            icon="options-outline"
+            onPress={() => setPrivacyModalVisible(true)}
+          />
         </SectionCard>
 
-        {/* Danger */}
+        {/* Data Management */}
+        <SectionCard title="Data Management" icon="folder-open-outline" color="#8b5cf6">
+          <ActionRow
+            label="Export Historical Data"
+            sublabel="Download your soil tests as JSON or CSV"
+            icon="download-outline"
+            onPress={handleExportData}
+          />
+        </SectionCard>
+
+        {/* Quick Links */}
+        <SectionCard title="Quick Links" icon="apps-outline" color="#f59e0b">
+          <ActionRow label="App Settings" sublabel="Notifications, language, theme" icon="settings-outline" onPress={() => router.push('/(app)/settings')} />
+          <ActionRow label="Chat History" sublabel="View past AI conversations" icon="chatbubbles-outline" onPress={() => router.push('/(app)/chat-history')} />
+          <ActionRow label="Buy Agni Device" sublabel="Get your soil sensor" icon="cart-outline" onPress={() => router.push('/(app)/buy-agni')} badge="New" />
+          <ActionRow label="About Saathi AI" sublabel="Version & legal info" icon="information-circle-outline" onPress={() => router.push('/(app)/about')} />
+        </SectionCard>
+
+        {/* Danger zone */}
         <SectionCard title="Account Actions" icon="warning-outline" color={Colors.error}>
-          <ActionRow label="Log Out" icon="log-out-outline" onPress={handleLogout} danger />
+          <ActionRow
+            label="Log Out"
+            sublabel="You can log back in anytime"
+            icon="log-out-outline"
+            onPress={handleLogout}
+            danger
+          />
+          <ActionRow
+            label="Delete Account"
+            sublabel="Permanently erase all your data"
+            icon="trash-outline"
+            onPress={handleDeleteAccount}
+            danger
+          />
         </SectionCard>
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            Account ID: {user?.id || 'N/A'}  ·  Joined{' '}
+          <Text style={styles.footerText}>Saathi AI  ·  Farmer First Technology</Text>
+          <Text style={styles.footerSub}>
+            ID: {user?.id ? String(user.id).slice(0, 8) + '...' : 'N/A'}  ·  Joined{' '}
             {user?.created_at
               ? new Date(user.created_at).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
               : 'N/A'}
@@ -378,128 +524,237 @@ export default function AccountScreen() {
 
         <View style={{ height: 120 }} />
       </ScrollView>
-      </View>
+
+      {/* Privacy Settings Modal */}
+      <Modal
+        visible={isPrivacyModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setPrivacyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <Pressable style={StyleSheet.absoluteFill} onPress={() => setPrivacyModalVisible(false)} />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Privacy & Data Settings</Text>
+              <Pressable onPress={() => setPrivacyModalVisible(false)} style={styles.closeBtn}>
+                <Ionicons name="close" size={20} color={Colors.textSecondary} />
+              </Pressable>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.modalScroll}>
+              <ToggleRow
+                label="Profile Visibility"
+                description="Allow other farmers to see your profile."
+                value={privacySettings.profileVisibility}
+                onToggle={(val) => handlePrivacyToggle('profileVisibility', val)}
+              />
+              <ToggleRow
+                label="Data Sharing"
+                description="Share anonymized crop data to improve local models."
+                value={privacySettings.dataSharing}
+                onToggle={(val) => handlePrivacyToggle('dataSharing', val)}
+              />
+              <ToggleRow
+                label="Analytics Tracking"
+                description="Help us improve by sending app usage data."
+                value={privacySettings.analytics}
+                onToggle={(val) => handlePrivacyToggle('analytics', val)}
+              />
+              <ToggleRow
+                label="Email Notifications"
+                description="Receive important account updates."
+                value={privacySettings.emailNotifications}
+                onToggle={(val) => handlePrivacyToggle('emailNotifications', val)}
+              />
+              <ToggleRow
+                label="Marketing Emails"
+                description="Receive offers and news from Saathi AI."
+                value={privacySettings.marketingEmails}
+                onToggle={(val) => handlePrivacyToggle('marketingEmails', val)}
+              />
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Colors.background },
-  header: {
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingHorizontal: Spacing.xl,
-    paddingBottom: Spacing.md,
-    backgroundColor: Colors.background,
-  },
-  headerTitle: { fontFamily: 'Sora_800ExtraBold', fontSize: 26, color: Colors.textPrimary },
-  headerSub: { fontFamily: 'Sora_400Regular', fontSize: 13, color: Colors.textSecondary, marginTop: 4 },
+  root: { flex: 1, backgroundColor: Colors.background },
 
-  scroll: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.md },
-
-  profileCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: Spacing.radius.xl,
-    padding: Spacing.lg,
-    ...Spacing.shadows.md,
-    marginBottom: Spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+  // Hero
+  hero: {
+    paddingTop: Platform.OS === 'ios' ? 52 : 32,
+    paddingBottom: 18,
+    paddingHorizontal: 20,
+    overflow: 'hidden',
   },
-  avatarContainer: { position: 'relative' },
-  avatar: {
-    width: 64, height: 64, borderRadius: 32,
-    backgroundColor: Colors.primary,
+  heroBubble1: {
+    position: 'absolute', width: 140, height: 140, borderRadius: 70,
+    backgroundColor: '#ffffff09', top: -50, right: -30,
+  },
+  heroBubble2: {
+    position: 'absolute', width: 90, height: 90, borderRadius: 45,
+    backgroundColor: '#ffffff07', bottom: -20, left: 10,
+  },
+  heroContent: { alignItems: 'center' },
+
+  avatarRing: {
+    width: 76, height: 76, borderRadius: 38,
+    borderWidth: 2.5, borderColor: '#4ade8055',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10,
+    shadowColor: '#4ade80',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  avatarImg: {
+    width: 68, height: 68, borderRadius: 34,
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText: { fontFamily: 'Sora_800ExtraBold', fontSize: 26, color: '#fff' },
+  avatarInitials: { fontFamily: 'Sora_800ExtraBold', fontSize: 24, color: '#fff' },
   onlineDot: {
     position: 'absolute', bottom: 2, right: 2,
     width: 14, height: 14, borderRadius: 7,
     backgroundColor: '#4ade80',
-    borderWidth: 2, borderColor: Colors.surface,
+    borderWidth: 2, borderColor: '#0A3D1F',
   },
-  profileInfo: { flex: 1 },
-  profileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  profileName: { fontFamily: 'Sora_700Bold', fontSize: 17, color: Colors.textPrimary },
-  providerBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 },
-  providerText: { fontFamily: 'Sora_600SemiBold', fontSize: 10 },
-  profileEmail: { fontFamily: 'Sora_400Regular', fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  profileLocation: { fontFamily: 'Sora_400Regular', fontSize: 12, color: Colors.textSecondary, marginTop: 2 },
-  memberBadge: { alignItems: 'flex-end' },
-  memberActive: { backgroundColor: Colors.surfaceAlt, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8 },
-  memberActiveText: { fontFamily: 'Sora_600SemiBold', fontSize: 10, color: Colors.primary },
-  memberAge: { fontFamily: 'Sora_400Regular', fontSize: 10, color: Colors.textMuted, marginTop: 4 },
 
+  heroName: { fontFamily: 'Sora_800ExtraBold', fontSize: 19, color: '#fff', marginBottom: 3, textAlign: 'center' },
+  heroEmail: { fontFamily: 'Sora_400Regular', fontSize: 11, color: '#ffffff99', marginBottom: 10, textAlign: 'center' },
+  heroBadgeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, justifyContent: 'center' },
+  heroBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: '#ffffff18', paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: 20, borderWidth: 1, borderColor: '#ffffff22',
+  },
+  heroBadgeText: { fontFamily: 'Sora_600SemiBold', fontSize: 9, color: '#ffffffdd' },
+
+  // Scroll body
+  scroll: { paddingHorizontal: 16, paddingTop: 20 },
+
+  // Cards
   card: {
     backgroundColor: Colors.surface,
-    borderRadius: Spacing.radius.xl,
-    padding: Spacing.lg,
-    ...Spacing.shadows.sm,
-    marginBottom: Spacing.lg,
-  },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: Spacing.md },
-  cardIconBg: { width: 32, height: 32, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  cardTitle: { fontFamily: 'Sora_700Bold', fontSize: 15, color: Colors.textPrimary },
-
-  fieldRow: { marginBottom: Spacing.md },
-  fieldLabel: { fontFamily: 'Sora_600SemiBold', fontSize: 12, color: Colors.textSecondary, marginBottom: 6 },
-  fieldInput: {
-    backgroundColor: Colors.background,
-    borderRadius: Spacing.radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontFamily: 'Sora_400Regular',
-    fontSize: 14,
-    color: Colors.textPrimary,
+    borderRadius: 20,
+    padding: 18,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
     borderWidth: 1,
     borderColor: Colors.borderLight,
   },
-  fieldInputReadOnly: {
-    backgroundColor: Colors.surfaceAlt,
-    color: Colors.textMuted,
-  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 },
+  cardIconBg: { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  cardTitle: { fontFamily: 'Sora_700Bold', fontSize: 15, color: Colors.textPrimary },
 
+  // Fields
+  fieldRow: { marginBottom: 14 },
+  fieldLabel: { fontFamily: 'Sora_600SemiBold', fontSize: 11, color: Colors.textSecondary, marginBottom: 6, letterSpacing: 0.3 },
+  fieldInputWrap: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10,
+    borderWidth: 1.5, borderColor: Colors.borderLight,
+  },
+  fieldInputFocused: { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
+  fieldInputReadOnlyWrap: { backgroundColor: Colors.surfaceAlt, borderColor: 'transparent' },
+  fieldInput: { flex: 1, fontFamily: 'Sora_400Regular', fontSize: 14, color: Colors.textPrimary },
+  fieldInputReadOnly: { color: Colors.textMuted },
+
+  // Unsaved banner
   unsavedBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF3C7',
-    borderRadius: Spacing.radius.md,
-    padding: 10,
-    marginBottom: Spacing.md,
-    gap: 8,
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#FEF3C7', borderRadius: 10,
+    padding: 10, marginBottom: 12, gap: 8,
   },
   unsavedText: { fontFamily: 'Sora_400Regular', fontSize: 12, color: '#92400e', flex: 1 },
-  discardText: { fontFamily: 'Sora_600SemiBold', fontSize: 12, color: '#92400e' },
+  discardText: { fontFamily: 'Sora_700Bold', fontSize: 12, color: '#b45309' },
 
-  saveBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Colors.primary,
-    borderRadius: Spacing.radius.lg,
-    paddingVertical: 12,
-    gap: 8,
+  // Save button
+  saveBtn: { borderRadius: 14, overflow: 'hidden', marginTop: 4 },
+  saveBtnGrad: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, gap: 8,
   },
   saveBtnText: { fontFamily: 'Sora_700Bold', fontSize: 14, color: '#fff' },
 
+  // Toggles
   toggleRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 4 },
   toggleLabel: { fontFamily: 'Sora_600SemiBold', fontSize: 14, color: Colors.textPrimary, marginBottom: 2 },
   toggleDesc: { fontFamily: 'Sora_400Regular', fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
 
+  // Action rows
   actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
-    gap: 10,
+    flexDirection: 'row', alignItems: 'center',
+    paddingVertical: 13, gap: 12,
+    borderTopWidth: 1, borderTopColor: Colors.borderLight,
   },
-  actionLabel: { flex: 1, fontFamily: 'Sora_600SemiBold', fontSize: 14, color: Colors.textSecondary },
+  actionIconBg: {
+    width: 34, height: 34, borderRadius: 10,
+    backgroundColor: Colors.surfaceAlt,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actionLabel: { fontFamily: 'Sora_600SemiBold', fontSize: 14, color: Colors.textPrimary },
+  actionSublabel: { fontFamily: 'Sora_400Regular', fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  actionBadge: {
+    backgroundColor: '#f59e0b20', paddingHorizontal: 8, paddingVertical: 2,
+    borderRadius: 8, borderWidth: 1, borderColor: '#f59e0b40',
+  },
+  actionBadgeText: { fontFamily: 'Sora_700Bold', fontSize: 10, color: '#f59e0b' },
 
-  oauthNote: { fontFamily: 'Sora_400Regular', fontSize: 11, color: Colors.textMuted, marginTop: 4, marginLeft: 4 },
+  // Footer
+  footer: { alignItems: 'center', paddingVertical: 16, gap: 4 },
+  footerText: { fontFamily: 'Sora_600SemiBold', fontSize: 12, color: Colors.textMuted },
+  footerSub: { fontFamily: 'Sora_400Regular', fontSize: 10, color: Colors.textMuted + '99' },
 
-  footer: { alignItems: 'center', paddingVertical: Spacing.md },
-  footerText: { fontFamily: 'Sora_400Regular', fontSize: 11, color: Colors.textMuted, textAlign: 'center' },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 20,
+    maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 18,
+    color: Colors.textPrimary,
+  },
+  closeBtn: {
+    padding: 6,
+    backgroundColor: Colors.surfaceAlt,
+    borderRadius: 20,
+  },
+  modalScroll: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 12,
+  },
 });
-
-

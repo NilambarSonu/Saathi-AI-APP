@@ -59,7 +59,7 @@ const STATUS_CONFIG: Record<string, { label: string; colors: [string, string, ..
   transferring:     { label: 'Receiving Soil Data…',      colors: ['#34D399', '#059669']            },
   complete:         { label: 'Transfer Complete ✓',        colors: ['#70E000', '#38B000']            },
   error:            { label: 'Retry Connection',          colors: ['#F59E0B', '#D97706']            },
-  bluetooth_off:    { label: 'Waiting for Bluetooth…',    colors: ['#9CA3AF', '#6B7280']            },
+  bluetooth_off:    { label: 'Reconnect Agni...',    colors: ['#7dadfbff', '#2c529eff']            },
   activating_bluetooth: { label: 'Activating Bluetooth…', colors: ['#FCD34D', '#F59E0B']            },
   permission_denied:{ label: 'Grant BT Permissions',      colors: ['#FCD34D', '#D97706']            },
 };
