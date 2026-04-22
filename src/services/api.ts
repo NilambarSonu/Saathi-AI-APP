@@ -134,7 +134,7 @@ export async function clearAuthTokens(): Promise<void> {
   );
 }
 
-export async function apiCall<T = any>(endpoint: string, options: RequestInit = {}): Promise<T | null> {
+export async function apiCall<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = await getStoredAccessToken();
   const headers = {
     ...JSON_HEADERS,
@@ -150,7 +150,7 @@ export async function apiCall<T = any>(endpoint: string, options: RequestInit = 
   if (!response.ok) {
     if (response.status === 401) {
       await clearAuthTokens().catch(() => {});
-      return null;
+      throw new Error('UNAUTHORIZED');
     }
 
     const text = await response.text();

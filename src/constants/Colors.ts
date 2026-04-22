@@ -24,5 +24,10 @@ export const Colors = {
   sep1: '#E5E7EB',
   sep2: '#F3F4F6',
   amber: '#F59E0B',
+  blue: '#3B82F6',
+  purple: '#8B5CF6',
   premium: '#8B5CF6',
+  borderLight: '#F3F4F6',
+  textMuted: '#9CA3AF',
+  primaryLight: '#ECFDF5',
 };

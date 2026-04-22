@@ -21,7 +21,7 @@ import ProfileScreen from '@/screens/ProfileScreen';
 
 import SwipeContainer, {
   type SwipeContainerHandle,
-} from '@/shared/components/navigation/SwipeContainer';
+} from '@/components/navigation/SwipeContainer';
 
 // ── Screens array — stable reference (module-level, never recreated) ──────────
 const SCREENS = [
@@ -211,6 +211,13 @@ const s = StyleSheet.create({
     fontSize: 9,
     fontFamily: 'Sora_700Bold',
     letterSpacing: 0.4,
+  },
+  bottomDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: DOT_COLOR,
+    marginTop: 2,
   }
 });
 

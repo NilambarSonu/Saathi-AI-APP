@@ -3,7 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import BottomSheet, { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { Colors } from '../constants/Colors';
 import { Spacing } from '../constants/Spacing';
-import { SoilTest } from '../src/features/soil_analysis/services/soil';
+import { SoilTest } from '@/features/soil_analysis/services/soil';
 import { getPhColor } from './MapComponent';
 
 interface SoilDetailsSheetProps {
