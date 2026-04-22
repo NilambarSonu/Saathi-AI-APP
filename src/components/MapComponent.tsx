@@ -93,7 +93,7 @@ export default function MapComponent({ tests, onMarkerPress, style }: MapCompone
         onMapReady={() => setIsRendered(true)}
       >
         {isRendered && tests.map((test) => {
-          if (test.latitude === null || test.longitude === null) return null;
+          if (test.latitude == null || test.longitude == null) return null;
 
           const markerColor = getPhColor(test.ph);
 
