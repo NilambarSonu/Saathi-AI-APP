@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { hideTabBar, showTabBar } from '@/constants/Animations';
 import {
   View, Text, TouchableOpacity, StyleSheet, Pressable,
-  ScrollView, SafeAreaView, Dimensions, Linking,
+  ScrollView, Dimensions, Linking,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons, Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import LottieView from 'lottie-react-native';

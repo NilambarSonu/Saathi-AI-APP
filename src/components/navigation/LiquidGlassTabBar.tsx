@@ -122,9 +122,15 @@ function TabItem({
     onPress();
   };
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
+  // ── Split transform and opacity into separate Animated.Views to prevent
+  // Expo Router's layout animation from overwriting the `transform` property
+  // (which causes the Reanimated "may be overwritten by a layout animation" warning).
+  const opacityStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
+  }));
+
+  const scaleStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
   }));
 
   return (
@@ -133,8 +139,12 @@ function TabItem({
       onPress={handlePress}
       activeOpacity={1}  // We handle opacity via animation
     >
-      <Animated.View style={[styles.tabInner, animStyle]}>
-        <Feather name={tab.icon} size={24} color={isActive ? '#1A5C35' : '#8A9E8E'} />
+      {/* Outer: opacity only — layout animation won't conflict */}
+      <Animated.View style={opacityStyle}>
+        {/* Inner: transform only — isolated from layout changes */}
+        <Animated.View style={[styles.tabInner, scaleStyle]}>
+          <Feather name={tab.icon} size={24} color={isActive ? '#1A5C35' : '#8A9E8E'} />
+        </Animated.View>
       </Animated.View>
     </TouchableOpacity>
   );

@@ -138,6 +138,7 @@ export async function apiCall<T = any>(endpoint: string, options: RequestInit = 
   const token = await getStoredAccessToken();
   const headers = {
     ...JSON_HEADERS,
+    'x-client-type': 'mobile',
     ...(options.headers || {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
@@ -179,6 +180,17 @@ export async function fetchSoilHistory<T = any[]>(userId: string): Promise<T> {
     return (payload ?? []) as T;
   } catch (error) {
     throw new Error(error instanceof Error ? error.message : 'Failed to fetch soil tests');
+  }
+}
+
+export async function fetchSoilTestDetail<T = any>(testId: string): Promise<T> {
+  if (!testId) throw new Error('Test ID is required');
+
+  try {
+    const payload = await apiCall(`/soil-tests/test/${encodeURIComponent(testId)}`);
+    return payload as T;
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : 'Failed to fetch soil test details');
   }
 }
 

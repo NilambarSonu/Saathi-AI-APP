@@ -20,6 +20,7 @@ import ErrorBoundary from '@/components/ErrorBoundary';
 import { SoilMarkersProvider } from '@/context/SoilMarkersContext';
 import { useAuthStore } from '@/store/authStore';
 import { checkAuthStatus, registerDevice } from '@/features/auth/services/auth';
+import { getStoredAccessToken, getStoredRefreshToken } from '@/services/api';
 
 SplashScreen.preventAutoHideAsync();
 WebBrowser.maybeCompleteAuthSession();
@@ -44,13 +45,21 @@ export default function RootLayout() {
 
         if (user) {
           // Restore session into Zustand (token already in AsyncStorage for interceptor)
-          const { useAuthStore: store } = await import('@/store/authStore');
-          const currentToken = store.getState().token;
-          await store.getState().setAuth(
-            currentToken || '', // token is already in AsyncStorage; just sync Zustand
-            store.getState().refreshToken,
-            user
-          );
+          // IMPORTANT: Get token directly from storage, not from Zustand (not yet rehydrated)
+          const token = await getStoredAccessToken();
+          const refreshToken = await getStoredRefreshToken();
+          
+          if (token) {
+            await useAuthStore.getState().setAuth(token, refreshToken, user);
+          } else {
+            // Token should exist if checkAuthStatus returned a user, but safeguard
+            useAuthStore.setState({
+              user: null,
+              token: null,
+              refreshToken: null,
+              isAuthenticated: false,
+            });
+          }
 
           // Register push token in background (non-blocking)
           try {

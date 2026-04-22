@@ -126,10 +126,10 @@ export default function AboutScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Our Mission</Text>
           <Text style={styles.bodyText}>
-            Agriculture is the backbone of India's economy, yet millions of farmers struggle without access to modern soil analysis tools. Saathi AI exists to change that.
+            At Agni Innovations, we believe that technology should serve those who feed the world. Our mission is to bridge the gap between advanced agricultural science and traditional farming wisdom, making precision agriculture accessible to every farmer.
           </Text>
           <Text style={[styles.bodyText, { marginTop: 10 }]}>
-            We combine IoT sensors (Agni device), artificial intelligence (Gemini AI), and multilingual support to deliver precise, actionable soil health insights directly to farmers' hands.
+            Saathi AI combines the power of artificial intelligence with deep understanding of local farming practices, delivering personalized recommendations in farmers' native languages.
           </Text>
         </View>
 

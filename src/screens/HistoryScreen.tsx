@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,725 +9,1111 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  StatusBar,
+  RefreshControl,
+  Modal,
+  Image,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useFocusEffect } from '@react-navigation/native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import MapView, { Marker, PROVIDER_GOOGLE, UrlTile } from 'react-native-maps';
 import { LineChart } from 'react-native-chart-kit';
+import { format, subDays, isAfter, parseISO } from 'date-fns';
 import { hideTabBar, showTabBar } from '@/constants/Animations';
-import { SoilTest } from '@/features/soil_analysis/services/soil';
+import { getSoilTests, SoilTest } from '@/features/soil_analysis/services/soil';
 import { exportSoilReport } from '@/services/pdfExport';
-import { getParameterTrend, ParameterTrend } from '@/services/analytics';
-import { fetchSoilHistory } from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { useSoilMarkers } from '@/context/SoilMarkersContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 const COLORS = {
-  backgroundTop: '#E0F5E9',
+  backgroundTop: '#F0FDF4',
   backgroundBottom: '#FFFFFF',
-  title: '#022C22',
-  subtitle: '#475569',
-  card: 'rgba(255,255,255,0.92)',
-  border: 'rgba(255,255,255,0.9)',
-  accent: '#059669',
+  title: '#064E3B',
+  subtitle: '#64748B',
+  card: 'rgba(255,255,255,0.95)',
+  border: 'rgba(15,23,42,0.06)',
+  accent: '#10B981',
+  accentDark: '#059669',
   warningBg: '#FFFBEB',
   warningBorder: '#FDE68A',
   warningText: '#92400E',
+  shadow: 'rgba(0,0,0,0.04)',
 };
 
-const PARAMETERS = ['Nitrogen (N)', 'Phosphorus (P)', 'Potassium (K)', 'pH Level', 'Moisture'] as const;
-const TIME_FILTERS = ['Last 30 Days', 'Last 90 Days', 'Last Year', 'All Time'] as const;
+const PARAMETERS = ['Nitrogen', 'Phosphorus', 'Potassium', 'pH Level', 'Moisture'] as const;
+const UNITS: Record<ParameterName, string> = {
+  'Nitrogen': 'mg/kg',
+  'Phosphorus': 'mg/kg',
+  'Potassium': 'mg/kg',
+  'pH Level': '',
+  'Moisture': '%',
+};
+const TIME_FILTERS = ['30 Days', '90 Days', '1 Year', 'All Time'] as const;
 
 type ParameterName = (typeof PARAMETERS)[number];
 type TimeFilter = (typeof TIME_FILTERS)[number];
 
-type HistoryMarker = {
-  id: string;
-  latitude: number;
-  longitude: number;
-  timestamp: string;
-  n: number;
-  p: number;
-  k: number;
-  ph: number;
-  moisture: number;
+// Helper to convert parameter name to SoilTest key
+const getParamKey = (param: ParameterName): keyof SoilTest => {
+  switch (param) {
+    case 'Nitrogen': return 'nitrogen';
+    case 'Phosphorus': return 'phosphorus';
+    case 'Potassium': return 'potassium';
+    case 'pH Level': return 'ph';
+    case 'Moisture': return 'moisture';
+    default: return 'nitrogen';
+  }
 };
 
-function toNumber(value: unknown, fallback = 0): number {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
+const getParamColor = (param: ParameterName): string => {
+  switch (param) {
+    case 'Nitrogen': return '#EF4444';
+    case 'Phosphorus': return '#8B5CF6';
+    case 'Potassium': return '#F59E0B';
+    case 'pH Level': return '#2563EB';
+    case 'Moisture': return '#10B981';
+    default: return '#10B981';
+  }
+};
 
-function parseIsoDate(value: unknown): string | null {
-  if (!value) return null;
-  const parsed = new Date(value as any);
-  if (Number.isNaN(parsed.getTime())) return null;
-  return parsed.toISOString();
-}
-
-function safeDateLabel(value: unknown): string {
-  const iso = parseIsoDate(value);
-  if (!iso) return 'N/A';
-
-  return new Date(iso).toLocaleDateString('en-IN', {
-    month: 'short',
-    day: 'numeric',
-  });
-}
-
-function safeDateTimeLabel(value: unknown): string {
-  const iso = parseIsoDate(value);
-  if (!iso) return 'Unknown date';
-
-  return new Date(iso).toLocaleString('en-IN', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-function getLogMetric(log: SoilTest, parameter: ParameterName): number {
-  if (parameter === 'pH Level') return toNumber(log.ph);
-  if (parameter === 'Nitrogen (N)') return toNumber(log.n);
-  if (parameter === 'Phosphorus (P)') return toNumber(log.p);
-  if (parameter === 'Potassium (K)') return toNumber(log.k);
-  return toNumber(log.moisture);
-}
-
-function getParamColor(parameter: ParameterName): string {
-  if (parameter === 'pH Level') return '#2563EB';
-  if (parameter === 'Nitrogen (N)') return '#EF4444';
-  if (parameter === 'Phosphorus (P)') return '#8B5CF6';
-  if (parameter === 'Potassium (K)') return '#F97316';
-  return '#16A34A';
-}
-
-function normalizeSoilLog(raw: any, index: number, fallbackUserId: string): SoilTest | null {
-  const createdAt =
-    parseIsoDate(raw?.testDate) ||
-    parseIsoDate(raw?.createdAt) ||
-    parseIsoDate(raw?.created_at) ||
-    parseIsoDate(raw?.timestamp) ||
-    parseIsoDate(raw?.date);
-
-  if (!createdAt) return null;
-
-  const latitude = raw?.latitude ?? raw?.lat;
-  const longitude = raw?.longitude ?? raw?.lng ?? raw?.lon;
-  const id = String(raw?.id || raw?._id || raw?.soilTestId || `${createdAt}-${index}`);
-
-  return {
-    id,
-    userId: String(raw?.userId || raw?.user_id || raw?.user?.id || fallbackUserId),
-    n: toNumber(raw?.n ?? raw?.nitrogen),
-    p: toNumber(raw?.p ?? raw?.phosphorus),
-    k: toNumber(raw?.k ?? raw?.potassium),
-    ph: toNumber(raw?.ph ?? raw?.pH),
-    moisture: toNumber(raw?.moisture ?? raw?.soilMoisture),
-    temperature: toNumber(raw?.temperature ?? raw?.temp),
-    latitude: Number.isFinite(Number(latitude)) ? Number(latitude) : null,
-    longitude: Number.isFinite(Number(longitude)) ? Number(longitude) : null,
-    deviceId: raw?.deviceId || raw?.device_id || undefined,
-    locationDetails:
-      raw?.locationDetails || raw?.location || raw?.address || raw?.fieldName || undefined,
-    createdAt,
-  };
-}
-
-function buildMarkers(logs: SoilTest[]): HistoryMarker[] {
-  return logs
-    .filter(
-      (log) => Number.isFinite(Number(log.latitude)) && Number.isFinite(Number(log.longitude))
-    )
-    .map((log) => ({
-      id: log.id,
-      latitude: Number(log.latitude),
-      longitude: Number(log.longitude),
-      timestamp: log.createdAt,
-      n: toNumber(log.n),
-      p: toNumber(log.p),
-      k: toNumber(log.k),
-      ph: toNumber(log.ph),
-      moisture: toNumber(log.moisture),
-    }));
-}
-
-export default function HistoryScreen() {
+export default function HistoryScreen({ navigation }: any) {
   const { user } = useAuthStore();
-  const { clearMarkers } = useSoilMarkers();
+  const { addSoilMarkers } = useSoilMarkers();
+  
   const [logs, setLogs] = useState<SoilTest[]>([]);
-  const [trend, setTrend] = useState<ParameterTrend | null>(null);
-  const [selectedParameter, setSelectedParameter] = useState<ParameterName>('Nitrogen (N)');
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('Last 30 Days');
-  const [loadingLogs, setLoadingLogs] = useState(false);
-  const [loadingTrend, setLoadingTrend] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  
+  const [selectedParameter, setSelectedParameter] = useState<ParameterName>('Nitrogen');
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('30 Days');
   const [mapMode, setMapMode] = useState<'google' | 'osm'>('google');
+  const [selectedLog, setSelectedLog] = useState<SoilTest | null>(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     if (!user?.id) {
-      setLogs([]);
-      setHistoryError(null);
-      setLoadingLogs(false);
+      console.log('[History] No user ID - skipping fetch');
       return;
     }
-
-    let cancelled = false;
-    setLoadingLogs(true);
-    setHistoryError(null);
-
-    fetchSoilHistory<any[]>(user.id)
-      .then((data) => {
-        if (cancelled) return;
-        const normalized = (Array.isArray(data) ? data : [])
-          .map((row, index) => normalizeSoilLog(row, index, user.id))
-          .filter((row): row is SoilTest => !!row)
-          .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
-        setLogs(normalized);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        setLogs([]);
-        setHistoryError(error?.message || 'Failed to fetch soil tests.');
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingLogs(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('[History] Fetching soil tests for user:', user.id);
+      const data = await getSoilTests(user.id);
+      console.log('[History] Successfully fetched', data.length, 'soil tests');
+      
+      // Sort by date descending
+      const sorted = [...data].sort((a, b) => 
+        new Date(b.testDate).getTime() - new Date(a.testDate).getTime()
+      );
+      
+      setLogs(sorted);
+      
+      // Sync with global SoilMarkersContext
+      const contextMarkers = sorted
+        .filter(l => l.latitude && l.longitude)
+        .map(l => ({
+          latitude: Number(l.latitude),
+          longitude: Number(l.longitude),
+          ph: Number(l.ph),
+          n: Number(l.nitrogen),
+          p: Number(l.phosphorus),
+          k: Number(l.potassium),
+          moisture: Number(l.moisture),
+          temperature: Number(l.temperature),
+          timestamp: l.testDate,
+          source: 'api' as const,
+          locationDetails: l.location ?? undefined,
+          deviceId: l.deviceId,
+        }));
+      
+      if (contextMarkers.length > 0) {
+        addSoilMarkers(contextMarkers);
+      }
+    } catch (err: any) {
+      console.error('[History] Fetch error:', err);
+      console.error('[History] Error status:', err?.response?.status);
+      console.error('[History] Error data:', err?.response?.data);
+      setError(
+        err?.response?.status === 401
+          ? 'Session expired. Please log in again.'
+          : err?.message || 'Unable to load history. Please try again.'
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }, [user?.id]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoadingTrend(true);
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
 
-    let days = 30;
-    if (timeFilter === 'Last 90 Days') days = 90;
-    if (timeFilter === 'Last Year') days = 365;
-    if (timeFilter === 'All Time') days = 3650;
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData();
+  }, [fetchData]);
 
-    getParameterTrend(selectedParameter, days)
-      .then((response) => {
-        if (!cancelled) setTrend(response || null);
-      })
-      .catch(() => {
-        if (!cancelled) setTrend(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingTrend(false);
-      });
+  // Filter logs based on time range
+  const filteredLogs = useMemo(() => {
+    if (timeFilter === 'All Time') return logs;
+    
+    const now = new Date();
+    let daysToSubtract = 30;
+    if (timeFilter === '90 Days') daysToSubtract = 90;
+    if (timeFilter === '1 Year') daysToSubtract = 365;
+    
+    const cutoff = subDays(now, daysToSubtract);
+    return logs.filter(log => isAfter(parseISO(log.testDate), cutoff));
+  }, [logs, timeFilter]);
 
-    return () => {
-      cancelled = true;
+  // Calculate statistics for the selected parameter
+  const stats = useMemo(() => {
+    if (!filteredLogs.length) return { avg: 0, total: 0, change: 0 };
+    
+    const key = getParamKey(selectedParameter);
+    const values = filteredLogs.map(l => Number(l[key]));
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    
+    // Calculate change between first half and second half of filtered logs
+    let change = 0;
+    if (filteredLogs.length >= 2) {
+      const mid = Math.floor(filteredLogs.length / 2);
+      const recentAvg = values.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+      const olderAvg = values.slice(mid).reduce((a, b) => a + b, 0) / (values.length - mid);
+      if (olderAvg !== 0) {
+        change = ((recentAvg - olderAvg) / olderAvg) * 100;
+      }
+    }
+    
+    return {
+      avg,
+      total: filteredLogs.length,
+      change
     };
-  }, [selectedParameter, timeFilter]);
+  }, [filteredLogs, selectedParameter]);
 
-  const markers = useMemo(() => buildMarkers(logs), [logs]);
-  const mapInitialRegion = useMemo(() => {
-    if (!markers.length) {
+  // Prepare chart data (max 7 points for readability)
+  const chartData = useMemo(() => {
+    const key = getParamKey(selectedParameter);
+    const points = filteredLogs.slice(0, 7).reverse();
+    
+    if (points.length === 0) {
       return {
-        latitude: 20.5937,
-        longitude: 78.9629,
-        latitudeDelta: 8,
-        longitudeDelta: 8,
+        labels: ['No Data'],
+        datasets: [{ data: [0] }]
       };
     }
-
+    
     return {
-      latitude: markers[0].latitude,
-      longitude: markers[0].longitude,
-      latitudeDelta: 0.2,
-      longitudeDelta: 0.2,
+      labels: points.map(l => format(parseISO(l.testDate), 'MMM d')),
+      datasets: [{
+        data: points.map(l => Number(l[key] ?? 0)),
+        color: (opacity = 1) => getParamColor(selectedParameter),
+        strokeWidth: 3
+      }]
     };
-  }, [markers]);
-
-  const chartLogs = useMemo(() => logs.slice(0, 6).reverse(), [logs]);
-  const chartData = useMemo(
-    () => ({
-      labels: chartLogs.length ? chartLogs.map((log) => safeDateLabel(log.createdAt)) : ['No Data'],
-      datasets: [
-        {
-          data: chartLogs.length >= 2 ? chartLogs.map((log) => getLogMetric(log, selectedParameter)) : [0, 0],
-        },
-      ],
-    }),
-    [chartLogs, selectedParameter]
-  );
+  }, [filteredLogs, selectedParameter]);
 
   const handleExport = async () => {
     if (!logs.length || !user) {
-      Alert.alert('No Data', 'No soil tests are available to export yet.');
+      Alert.alert('No Data', 'You need at least one soil test to export a report.');
       return;
     }
 
-    setIsExporting(true);
     try {
+      setIsExporting(true);
       await exportSoilReport(logs, user as any);
-    } catch {
-      Alert.alert('Export Failed', 'Unable to export the soil history PDF right now.');
+    } catch (err) {
+      Alert.alert('Export Error', 'Could not generate the PDF report.');
     } finally {
       setIsExporting(false);
     }
   };
 
-  if (!user?.id) {
+  const mapInitialRegion = useMemo(() => {
+    const testsWithLoc = logs.filter(l => l.latitude && l.longitude);
+    if (!testsWithLoc.length) {
+      return {
+        latitude: 20.5937,
+        longitude: 78.9629,
+        latitudeDelta: 15,
+        longitudeDelta: 15,
+      };
+    }
+    return {
+      latitude: Number(testsWithLoc[0].latitude),
+      longitude: Number(testsWithLoc[0].longitude),
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
+    };
+  }, [logs]);
+  
+  const openDetails = (log: SoilTest) => {
+    setSelectedLog(log);
+    setIsModalVisible(true);
+  };
+
+  if (!user) {
     return (
-      <View style={styles.root}>
-        <LinearGradient
-          colors={[COLORS.backgroundTop, COLORS.backgroundBottom]}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={styles.centerState}>
-          <Ionicons name="lock-closed-outline" size={34} color={COLORS.accent} />
-          <Text style={styles.centerTitle}>Sign In To View History</Text>
-          <Text style={styles.centerText}>Your soil test history will appear here after login.</Text>
-        </View>
+      <View style={styles.emptyContainer}>
+        <StatusBar barStyle="dark-content" />
+        <Ionicons name="lock-closed" size={64} color="#CBD5E1" />
+        <Text style={styles.emptyTitle}>Secure Access</Text>
+        <Text style={styles.emptyText}>Please sign in to view your soil test history and analytics.</Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.root}>
-      <LinearGradient
-        colors={[COLORS.backgroundTop, COLORS.backgroundBottom]}
-        style={StyleSheet.absoluteFill}
-      />
-
-      <ScrollView
-        contentContainerStyle={styles.scroll}
+    <View style={styles.container}>
+      <StatusBar barStyle="dark-content" />
+      <LinearGradient colors={[COLORS.backgroundTop, COLORS.backgroundBottom]} style={StyleSheet.absoluteFill} />
+      
+      <ScrollView 
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         onScrollBeginDrag={hideTabBar}
         onScrollEndDrag={showTabBar}
-        onMomentumScrollBegin={hideTabBar}
-        onMomentumScrollEnd={showTabBar}
-        scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.accent} />
+        }
       >
-        <View style={styles.headerRow}>
-          <Text style={styles.title}>History & Analytics</Text>
-          <TouchableOpacity
-            style={[styles.exportBtn, isExporting && { opacity: 0.7 }]}
-            onPress={handleExport}
-            disabled={isExporting}
-          >
-            <Ionicons name="document-text-outline" size={14} color="#FFF" style={{ marginRight: 4 }} />
-            <Text style={styles.exportBtnText}>{isExporting ? 'Starting...' : 'Export PDF'}</Text>
+        {/* Header Section */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.greeting}>Soil History</Text>
+            <Text style={styles.title}>Analytics Lab</Text>
+          </View>
+          <TouchableOpacity style={styles.exportButton} onPress={handleExport} disabled={isExporting}>
+            {isExporting ? (
+              <ActivityIndicator size="small" color="#FFF" />
+            ) : (
+              <>
+                <Ionicons name="cloud-download-outline" size={20} color="#FFF" />
+                <Text style={styles.exportText}>PDF</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
-        {!!historyError && (
-          <View style={styles.errorBanner}>
-            <Ionicons name="warning-outline" size={16} color={COLORS.warningText} />
-            <Text style={styles.errorBannerText}>{historyError}</Text>
+        {error && (
+          <View style={styles.errorCard}>
+            <Ionicons name="alert-circle" size={20} color={COLORS.warningText} />
+            <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 
-        <View style={styles.filterRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {TIME_FILTERS.map((filter) => (
-              <TouchableOpacity
-                key={filter}
-                style={[styles.filterPill, timeFilter === filter && styles.filterPillActive]}
-                onPress={() => setTimeFilter(filter)}
-              >
-                <Text style={[styles.filterText, timeFilter === filter && styles.filterTextActive]}>
-                  {filter}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {PARAMETERS.map((parameter) => (
-              <TouchableOpacity
-                key={parameter}
-                style={[styles.filterPill, selectedParameter === parameter && styles.filterPillActive]}
-                onPress={() => setSelectedParameter(parameter)}
-              >
-                <Text
-                  style={[
-                    styles.filterText,
-                    selectedParameter === parameter && styles.filterTextActive,
-                  ]}
-                >
-                  {parameter}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Field Test Locations</Text>
-            <TouchableOpacity
-              style={styles.secondaryBtn}
-              onPress={() => setMapMode((current) => (current === 'google' ? 'osm' : 'google'))}
-            >
-              <Text style={styles.secondaryBtnText}>Map: {mapMode === 'google' ? 'Google' : 'OSM'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => clearMarkers()}>
-              <Text style={styles.secondaryBtnText}>Clear</Text>
-            </TouchableOpacity>
+        {/* Stats Summary Bar */}
+        <View style={styles.statsBar}>
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Avg {selectedParameter}</Text>
+            <Text style={[styles.statValue, { color: getParamColor(selectedParameter) }]}>
+              {selectedParameter === 'pH Level' ? stats.avg.toFixed(1) : stats.avg.toFixed(0)}
+              <Text style={styles.unitText}> {UNITS[selectedParameter]}</Text>
+            </Text>
           </View>
-
-          <View style={styles.mapWrapper}>
-            {loadingLogs ? (
-              <View style={styles.mapFallback}>
-                <ActivityIndicator size="small" color={COLORS.accent} />
-                <Text style={styles.mapFallbackText}>Loading markers...</Text>
-              </View>
-            ) : (
-              <MapView
-                style={styles.map}
-                provider={Platform.OS === 'android' && mapMode === 'google' ? PROVIDER_GOOGLE : undefined}
-                initialRegion={mapInitialRegion}
-                mapType={mapMode === 'google' ? 'standard' : 'none'}
-              >
-                {mapMode === 'osm' && (
-                  <UrlTile
-                    urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    maximumZ={19}
-                    flipY={false}
-                  />
-                )}
-                {markers.map((marker) => (
-                  <Marker
-                    key={marker.id}
-                    coordinate={{ latitude: marker.latitude, longitude: marker.longitude }}
-                    pinColor={marker.ph < 6.5 ? '#EF4444' : marker.ph > 7.5 ? '#2563EB' : '#22C55E'}
-                    title={safeDateLabel(marker.timestamp)}
-                    description={`pH ${marker.ph.toFixed(1)} | NPK ${marker.n}-${marker.p}-${marker.k}`}
-                  />
-                ))}
-              </MapView>
-            )}
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Total Tests</Text>
+            <Text style={styles.statValue}>{stats.total}</Text>
           </View>
-
-          {!loadingLogs && !markers.length && (
-            <View style={styles.emptyBlock}>
-              <Ionicons name="location-outline" size={28} color={COLORS.subtitle} />
-              <Text style={styles.emptyText}>No saved soil-test coordinates yet.</Text>
+          <View style={styles.divider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statLabel}>Trend</Text>
+            <View style={styles.trendRow}>
+              <Ionicons 
+                name={stats.change >= 0 ? "trending-up" : "trending-down"} 
+                size={16} 
+                color={stats.change >= 0 ? "#10B981" : "#EF4444"} 
+              />
+              <Text style={[styles.trendText, { color: stats.change >= 0 ? "#10B981" : "#EF4444" }]}>
+                {Math.abs(stats.change).toFixed(1)}%
+              </Text>
             </View>
-          )}
+          </View>
         </View>
 
+        {/* Filters */}
+        <View style={styles.filterSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+            {TIME_FILTERS.map(f => (
+              <TouchableOpacity 
+                key={f} 
+                onPress={() => setTimeFilter(f)}
+                style={[styles.filterPill, timeFilter === f && styles.filterPillActive]}
+              >
+                <Text style={[styles.filterLabel, timeFilter === f && styles.filterLabelActive]}>{f}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll}>
+            {PARAMETERS.map(p => (
+              <TouchableOpacity 
+                key={p} 
+                onPress={() => setSelectedParameter(p)}
+                style={[styles.paramPill, selectedParameter === p && { backgroundColor: getParamColor(p) + '15', borderColor: getParamColor(p) }]}
+              >
+                <View style={[styles.colorDot, { backgroundColor: getParamColor(p) }]} />
+                <Text style={[styles.paramLabel, selectedParameter === p && { color: getParamColor(p) }]}>{p}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Chart Card */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>{selectedParameter} Trend Analysis</Text>
-          {loadingTrend ? (
-            <View style={styles.chartLoading}>
-              <ActivityIndicator size="small" color={COLORS.accent} />
-              <Text style={styles.mapFallbackText}>Loading trend data...</Text>
+          <Text style={styles.cardTitle}>{selectedParameter} Trend</Text>
+          {loading ? (
+            <View style={styles.chartLoader}>
+              <ActivityIndicator color={COLORS.accent} />
             </View>
           ) : (
             <LineChart
               data={chartData}
-              width={Math.max(SCREEN_WIDTH - 48, 240)}
-              height={190}
-              withInnerLines={false}
-              withOuterLines={false}
-              withShadow={false}
+              width={SCREEN_WIDTH - 48}
+              height={200}
               chartConfig={{
-                backgroundGradientFrom: 'transparent',
-                backgroundGradientTo: 'transparent',
-                backgroundColor: 'transparent',
+                backgroundColor: '#FFF',
+                backgroundGradientFrom: '#FFF',
+                backgroundGradientTo: '#FFF',
                 decimalPlaces: selectedParameter === 'pH Level' ? 1 : 0,
-                color: () => getParamColor(selectedParameter),
-                labelColor: () => COLORS.subtitle,
+                color: (opacity = 1) => getParamColor(selectedParameter),
+                labelColor: (opacity = 1) => '#94A3B8',
+                style: { borderRadius: 16 },
                 propsForDots: {
-                  r: '4',
+                  r: '5',
                   strokeWidth: '2',
-                  stroke: '#FFFFFF',
+                  stroke: '#FFF'
                 },
+                propsForLabels: {
+                  fontFamily: 'Sora_400Regular',
+                  fontSize: 10
+                }
               }}
               bezier
-              style={{ borderRadius: 16 }}
+              style={styles.chart}
+              withInnerLines={false}
+              withOuterLines={false}
+              withVerticalLines={false}
             />
           )}
+        </View>
 
-          <View style={styles.trendStats}>
-            <View style={styles.trendStat}>
-              <Text style={[styles.trendValue, { color: getParamColor(selectedParameter) }]}>
-                {Number.isFinite(Number(trend?.averageValue))
-                  ? Number(trend?.averageValue).toFixed(selectedParameter === 'pH Level' ? 1 : 0)
-                  : '--'}
-              </Text>
-              <Text style={styles.trendLabel}>Average</Text>
-            </View>
-            <View style={styles.trendStat}>
-              <Text style={styles.trendValue}>
-                {Number.isFinite(Number(trend?.totalTests)) ? String(trend?.totalTests) : '--'}
-              </Text>
-              <Text style={styles.trendLabel}>Total Tests</Text>
-            </View>
-            <View style={styles.trendStat}>
-              <Text style={styles.trendValue}>
-                {Number.isFinite(Number(trend?.improvementPercentage))
-                  ? `${Number(trend?.improvementPercentage) > 0 ? '+' : ''}${Number(
-                      trend?.improvementPercentage
-                    ).toFixed(1)}%`
-                  : '--'}
-              </Text>
-              <Text style={styles.trendLabel}>Improvement</Text>
-            </View>
+        {/* Map Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Field Locations</Text>
+            <TouchableOpacity onPress={() => setMapMode(m => m === 'google' ? 'osm' : 'google')}>
+              <Text style={styles.mapToggle}>{mapMode === 'google' ? 'Switch to OSM' : 'Switch to Google'}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.mapContainer}>
+            <MapView
+              style={styles.map}
+              provider={mapMode === 'google' ? PROVIDER_GOOGLE : undefined}
+              initialRegion={mapInitialRegion}
+              mapType={mapMode === 'google' ? 'satellite' : 'none'}
+            >
+              {mapMode === 'osm' && (
+                <UrlTile urlTemplate="https://tile.openstreetmap.org/{z}/{x}/{y}.png" maximumZ={19} />
+              )}
+              {logs.filter(l => l.latitude && l.longitude).map((log, idx) => (
+                <Marker
+                  key={log.id}
+                  coordinate={{ latitude: Number(log.latitude), longitude: Number(log.longitude) }}
+                  title={`Test on ${format(parseISO(log.testDate), 'MMM d, yyyy')}`}
+                >
+                  <View style={[styles.customMarker, { borderColor: getParamColor(selectedParameter) }]}>
+                    <View style={[styles.markerDot, { backgroundColor: getParamColor(selectedParameter) }]} />
+                  </View>
+                </Marker>
+              ))}
+            </MapView>
           </View>
         </View>
 
+        {/* History Log */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Test History Log</Text>
-          {loadingLogs ? (
-            <View style={styles.chartLoading}>
-              <ActivityIndicator size="small" color={COLORS.accent} />
-              <Text style={styles.mapFallbackText}>Loading soil history...</Text>
-            </View>
-          ) : logs.length === 0 ? (
-            <View style={styles.emptyBlock}>
-              <Ionicons name="flask-outline" size={28} color={COLORS.subtitle} />
-              <Text style={styles.emptyText}>No soil tests recorded yet.</Text>
+          {loading ? (
+            <ActivityIndicator style={{ margin: 20 }} color={COLORS.accent} />
+          ) : filteredLogs.length === 0 ? (
+            <View style={styles.noDataContainer}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="flask-outline" size={32} color={COLORS.accent} />
+              </View>
+              <Text style={styles.noDataTitle}>No Records Yet</Text>
+              <Text style={styles.noData}>You haven't conducted any soil tests in this period.</Text>
+              <TouchableOpacity 
+                style={styles.startTestButton}
+                onPress={() => navigation.navigate('Analysis')}
+              >
+                <Text style={styles.startTestText}>Start New Test</Text>
+              </TouchableOpacity>
             </View>
           ) : (
-            logs.map((log) => (
-              <View key={log.id} style={styles.logRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.logDate}>{safeDateTimeLabel(log.createdAt)}</Text>
-                  <Text style={styles.logMeta}>
-                    pH {toNumber(log.ph).toFixed(1)} | NPK {toNumber(log.n)}-{toNumber(log.p)}-{toNumber(log.k)}
-                  </Text>
-                  <Text style={styles.logMeta}>
-                    {typeof log.locationDetails === 'string' ? log.locationDetails : 'Location unavailable'}
-                  </Text>
-                  {'recommendation' in (log as any) && (log as any).recommendation ? (
-                    <Text style={styles.recommendationText} numberOfLines={2}>
-                      {(log as any).recommendation}
-                    </Text>
-                  ) : null}
+            filteredLogs.map((log, index) => (
+              <TouchableOpacity 
+                key={log.id} 
+                style={[styles.logItem, index === filteredLogs.length - 1 && { borderBottomWidth: 0 }]}
+                onPress={() => openDetails(log)}
+              >
+                <View style={styles.logIcon}>
+                  <Ionicons name="leaf" size={20} color={COLORS.accent} />
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={COLORS.subtitle} />
-              </View>
+                <View style={styles.logInfo}>
+                  <Text style={styles.logDate}>{format(parseISO(log.testDate), 'MMMM d, yyyy')}</Text>
+                  <Text style={styles.logTime}>{format(parseISO(log.testDate), 'hh:mm a')}</Text>
+                </View>
+                <View style={styles.logValues}>
+                  <Text style={styles.logMainValue}>pH {Number(log.ph).toFixed(1)}</Text>
+                  <Text style={styles.logSubValue}>N:{Number(log.nitrogen).toFixed(0)} P:{Number(log.phosphorus).toFixed(0)} K:{Number(log.potassium).toFixed(0)} <Text style={styles.logUnit}>ppm</Text></Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#CBD5E1" />
+              </TouchableOpacity>
             ))
           )}
         </View>
       </ScrollView>
+
+      {/* Details Modal */}
+      <Modal
+        visible={isModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Test Details</Text>
+              <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.closeButton}>
+                <Ionicons name="close" size={24} color={COLORS.title} />
+              </TouchableOpacity>
+            </View>
+
+            {selectedLog && (
+              <ScrollView showsVerticalScrollIndicator={false}>
+                <View style={styles.modalHero}>
+                  <View style={styles.scoreCircle}>
+                    <Text style={styles.scoreValue}>{selectedLog.healthScore || 'N/A'}</Text>
+                    <Text style={styles.scoreLabel}>Health Score</Text>
+                  </View>
+                  <View style={styles.statusBadge}>
+                    <View style={[styles.statusDot, { backgroundColor: selectedLog.status === 'Critical' ? '#EF4444' : '#10B981' }]} />
+                    <Text style={styles.statusText}>{selectedLog.status || 'Good'}</Text>
+                  </View>
+                  <Text style={styles.modalDate}>
+                    {format(parseISO(selectedLog.testDate), 'MMMM d, yyyy • hh:mm a')}
+                  </Text>
+                </View>
+
+                <View style={styles.modalStatsGrid}>
+                  <View style={styles.modalStatCard}>
+                    <Text style={styles.modalStatLabel}>Nitrogen</Text>
+                    <Text style={styles.modalStatValue}>{Number(selectedLog.nitrogen).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
+                  </View>
+                  <View style={styles.modalStatCard}>
+                    <Text style={styles.modalStatLabel}>Phosphorus</Text>
+                    <Text style={styles.modalStatValue}>{Number(selectedLog.phosphorus).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
+                  </View>
+                  <View style={styles.modalStatCard}>
+                    <Text style={styles.modalStatLabel}>Potassium</Text>
+                    <Text style={styles.modalStatValue}>{Number(selectedLog.potassium).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
+                  </View>
+                  <View style={styles.modalStatCard}>
+                    <Text style={styles.modalStatLabel}>pH Level</Text>
+                    <Text style={styles.modalStatValue}>{Number(selectedLog.ph).toFixed(1)}</Text>
+                  </View>
+                  <View style={styles.modalStatCard}>
+                    <Text style={styles.modalStatLabel}>Moisture</Text>
+                    <Text style={styles.modalStatValue}>{selectedLog.moisture != null ? `${Number(selectedLog.moisture).toFixed(1)}%` : 'N/A'}</Text>
+                  </View>
+                  <View style={styles.modalStatCard}>
+                    <Text style={styles.modalStatLabel}>Temp</Text>
+                    <Text style={styles.modalStatValue}>{selectedLog.temperature != null ? `${Number(selectedLog.temperature).toFixed(1)}°C` : 'N/A'}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.recommendationCard}>
+                  <View style={styles.recommendationHeader}>
+                    <Ionicons name="bulb" size={20} color={COLORS.accent} />
+                    <Text style={styles.recommendationTitle}>AI Recommendations</Text>
+                  </View>
+                  {selectedLog.recommendation?.recommendations ? (
+                    <Text style={styles.recommendationText}>
+                      {selectedLog.recommendation.recommendations}
+                    </Text>
+                  ) : (
+                    <Text style={styles.recommendationText}>
+                      Based on your soil analysis, your soil health is currently stable. Maintain regular organic composting and ensure balanced irrigation.
+                    </Text>
+                  )}
+                  {selectedLog.recommendation?.naturalFertilizers && selectedLog.recommendation.naturalFertilizers.length > 0 && (
+                    <View style={{ marginTop: 12 }}>
+                      <Text style={[styles.recommendationTitle, { fontSize: 13, marginBottom: 8 }]}>🌿 Natural Fertilizers</Text>
+                      {selectedLog.recommendation.naturalFertilizers.slice(0, 3).map((f, i) => (
+                        <Text key={i} style={[styles.recommendationText, { marginBottom: 4 }]}>
+                          • <Text style={{ fontFamily: 'Sora_600SemiBold' }}>{f.name}</Text> — {f.amount}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                  {selectedLog.recommendation?.chemicalFertilizers && selectedLog.recommendation.chemicalFertilizers.length > 0 && (
+                    <View style={{ marginTop: 12 }}>
+                      <Text style={[styles.recommendationTitle, { fontSize: 13, marginBottom: 8 }]}>🧪 Chemical Fertilizers</Text>
+                      {selectedLog.recommendation.chemicalFertilizers.slice(0, 3).map((f, i) => (
+                        <Text key={i} style={[styles.recommendationText, { marginBottom: 4 }]}>
+                          • <Text style={{ fontFamily: 'Sora_600SemiBold' }}>{f.name}</Text> — {f.amount}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {selectedLog.latitude != null && (
+                  <View style={styles.locationDetailRow}>
+                    <Ionicons name="location-outline" size={16} color={COLORS.subtitle} />
+                    <Text style={styles.locationDetailText}>
+                      Coordinates: {Number(selectedLog.latitude).toFixed(4)}, {Number(selectedLog.longitude).toFixed(4)}
+                    </Text>
+                  </View>
+                )}
+                
+                <TouchableOpacity 
+                  style={styles.modalExportButton}
+                  onPress={() => {
+                    setIsModalVisible(false);
+                    exportSoilReport([selectedLog], user as any);
+                  }}
+                >
+                  <Text style={styles.modalExportText}>Export This Report</Text>
+                </TouchableOpacity>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  scroll: {
-    paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 120,
-  },
-  centerState: {
+  container: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#FFF',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 24,
+    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    marginBottom: 20,
   },
-  centerTitle: {
-    marginTop: 12,
+  greeting: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 14,
+    color: COLORS.subtitle,
+  },
+  title: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 28,
+    color: COLORS.title,
+    marginTop: -4,
+  },
+  exportButton: {
+    backgroundColor: COLORS.accent,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    shadowColor: COLORS.accent,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  exportText: {
+    fontFamily: 'Sora_600SemiBold',
+    color: '#FFF',
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  statsBar: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.card,
+    marginHorizontal: 24,
+    padding: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
+    elevation: 2,
+    marginBottom: 24,
+  },
+  statItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statLabel: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 10,
+    color: COLORS.subtitle,
+    marginBottom: 4,
+  },
+  statValue: {
     fontFamily: 'Sora_700Bold',
     fontSize: 18,
     color: COLORS.title,
-    textAlign: 'center',
   },
-  centerText: {
-    marginTop: 8,
+  unitText: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 10,
+    color: COLORS.subtitle,
+  },
+  divider: {
+    width: 1,
+    height: 30,
+    backgroundColor: '#F1F5F9',
+  },
+  trendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendText: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 12,
+    marginLeft: 2,
+  },
+  filterSection: {
+    marginBottom: 12,
+  },
+  filterScroll: {
+    paddingLeft: 24,
+    marginBottom: 12,
+  },
+  filterPill: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 100,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 8,
+  },
+  filterPillActive: {
+    backgroundColor: COLORS.title,
+    borderColor: COLORS.title,
+  },
+  filterLabel: {
+    fontFamily: 'Sora_500Medium',
+    fontSize: 12,
+    color: '#64748B',
+  },
+  filterLabelActive: {
+    color: '#FFF',
+  },
+  paramPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 100,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginRight: 8,
+  },
+  colorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 8,
+  },
+  paramLabel: {
+    fontFamily: 'Sora_500Medium',
+    fontSize: 12,
+    color: '#64748B',
+  },
+  card: {
+    backgroundColor: COLORS.card,
+    marginHorizontal: 24,
+    padding: 20,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardTitle: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 18,
+    color: COLORS.title,
+    marginBottom: 16,
+  },
+  chart: {
+    marginVertical: 8,
+    borderRadius: 16,
+    marginLeft: -16,
+  },
+  chartLoader: {
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mapContainer: {
+    height: 220,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  map: {
+    width: '100%',
+    height: '100%',
+  },
+  mapToggle: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 12,
+    color: COLORS.accentDark,
+  },
+  customMarker: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFF',
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  markerDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  logItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  logIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#F0FDF4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  logInfo: {
+    flex: 1,
+  },
+  logDate: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 14,
+    color: COLORS.title,
+  },
+  logTime: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 12,
+    color: COLORS.subtitle,
+    marginTop: 2,
+  },
+  logValues: {
+    alignItems: 'flex-end',
+    marginRight: 10,
+  },
+  logMainValue: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 15,
+    color: COLORS.title,
+  },
+  logSubValue: {
+    fontFamily: 'Sora_500Medium',
+    fontSize: 11,
+    color: COLORS.subtitle,
+    marginTop: 2,
+  },
+  logUnit: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 9,
+    color: COLORS.subtitle,
+  },
+  noDataContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#F0FDF4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  noDataTitle: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 16,
+    color: COLORS.title,
+    marginBottom: 8,
+  },
+  noData: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 14,
+    color: COLORS.subtitle,
+    textAlign: 'center',
+    maxWidth: 200,
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  startTestButton: {
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 14,
+  },
+  startTestText: {
+    fontFamily: 'Sora_600SemiBold',
+    color: '#FFF',
+    fontSize: 14,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFF',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 40,
+    maxHeight: '90%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 20,
+    color: COLORS.title,
+  },
+  closeButton: {
+    padding: 4,
+  },
+  modalHero: {
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  scoreCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 8,
+    borderColor: '#F0FDF4',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  scoreValue: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 28,
+    color: COLORS.accentDark,
+  },
+  scoreLabel: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 10,
+    color: COLORS.subtitle,
+    marginTop: -2,
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 100,
+    marginBottom: 12,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusText: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 12,
+    color: COLORS.title,
+  },
+  modalDate: {
     fontFamily: 'Sora_400Regular',
     fontSize: 13,
     color: COLORS.subtitle,
-    textAlign: 'center',
-    lineHeight: 20,
   },
-  headerRow: {
+  modalStatsGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 24,
   },
-  title: {
-    fontFamily: 'Sora_800ExtraBold',
-    fontSize: 22,
+  modalStatCard: {
+    width: '31%',
+    backgroundColor: '#F8FAFC',
+    padding: 12,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+  },
+  modalStatLabel: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 10,
+    color: COLORS.subtitle,
+    marginBottom: 4,
+  },
+  modalStatValue: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 14,
     color: COLORS.title,
   },
-  exportBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.accent,
-    borderRadius: 100,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+  modalUnit: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 9,
+    color: COLORS.subtitle,
   },
-  exportBtnText: {
-    fontFamily: 'Sora_700Bold',
-    fontSize: 12,
-    color: '#FFF',
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  recommendationCard: {
     backgroundColor: COLORS.warningBg,
-    borderColor: COLORS.warningBorder,
+    padding: 20,
+    borderRadius: 24,
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
+    borderColor: COLORS.warningBorder,
+    marginBottom: 20,
   },
-  errorBannerText: {
+  recommendationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  recommendationTitle: {
+    fontFamily: 'Sora_700Bold',
+    fontSize: 16,
+    color: COLORS.title,
+    marginLeft: 8,
+  },
+  recommendationText: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 22,
+  },
+  locationDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 32,
+  },
+  locationDetailText: {
+    fontFamily: 'Sora_400Regular',
+    fontSize: 12,
+    color: COLORS.subtitle,
+    marginLeft: 6,
+  },
+  modalExportButton: {
+    backgroundColor: COLORS.title,
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+  },
+  modalExportText: {
+    fontFamily: 'Sora_600SemiBold',
+    color: '#FFF',
+    fontSize: 16,
+  },
+  errorCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.warningBg,
+    marginHorizontal: 24,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.warningBorder,
+    marginBottom: 20,
+  },
+  errorText: {
     flex: 1,
     fontFamily: 'Sora_500Medium',
     fontSize: 12,
     color: COLORS.warningText,
+    marginLeft: 8,
   },
-  filterRow: {
-    gap: 10,
-    marginBottom: 16,
-  },
-  filterPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 100,
-    backgroundColor: 'rgba(255,255,255,0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(15,23,42,0.08)',
-    marginRight: 10,
-  },
-  filterPillActive: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#86EFAC',
-  },
-  filterText: {
-    fontFamily: 'Sora_600SemiBold',
-    fontSize: 12,
-    color: COLORS.subtitle,
-  },
-  filterTextActive: {
-    color: COLORS.accent,
-  },
-  card: {
-    backgroundColor: COLORS.card,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 18,
-    marginBottom: 18,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  cardTitle: {
+  emptyContainer: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#FFF',
+  },
+  emptyTitle: {
     fontFamily: 'Sora_700Bold',
-    fontSize: 18,
+    fontSize: 22,
     color: COLORS.title,
-  },
-  secondaryBtn: {
-    backgroundColor: 'rgba(15,23,42,0.06)',
-    borderRadius: 100,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-  },
-  secondaryBtnText: {
-    fontFamily: 'Sora_600SemiBold',
-    fontSize: 11,
-    color: COLORS.subtitle,
-  },
-  mapWrapper: {
-    height: 240,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: 'rgba(15,23,42,0.08)',
-  },
-  map: { width: '100%', height: '100%' },
-  mapFallback: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  mapFallbackText: {
-    fontFamily: 'Sora_500Medium',
-    fontSize: 12,
-    color: COLORS.subtitle,
-  },
-  emptyBlock: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 24,
-    gap: 8,
+    marginTop: 24,
   },
   emptyText: {
-    fontFamily: 'Sora_500Medium',
-    fontSize: 13,
+    fontFamily: 'Sora_400Regular',
+    fontSize: 15,
     color: COLORS.subtitle,
     textAlign: 'center',
-  },
-  chartLoading: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 190,
-    gap: 8,
-  },
-  trendStats: {
-    flexDirection: 'row',
     marginTop: 12,
-    gap: 10,
-  },
-  trendStat: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 12,
-    backgroundColor: 'rgba(255,255,255,0.7)',
-    borderRadius: 14,
-  },
-  trendValue: {
-    fontFamily: 'Sora_800ExtraBold',
-    fontSize: 20,
-    color: COLORS.title,
-  },
-  trendLabel: {
-    marginTop: 4,
-    fontFamily: 'Sora_500Medium',
-    fontSize: 11,
-    color: COLORS.subtitle,
-  },
-  logRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(15,23,42,0.06)',
-  },
-  logDate: {
-    fontFamily: 'Sora_600SemiBold',
-    fontSize: 13,
-    color: COLORS.title,
-  },
-  logMeta: {
-    marginTop: 4,
-    fontFamily: 'Sora_400Regular',
-    fontSize: 12,
-    color: COLORS.subtitle,
-  },
-  recommendationText: {
-    marginTop: 6,
-    fontFamily: 'Sora_500Medium',
-    fontSize: 12,
-    color: COLORS.accent,
+    lineHeight: 22,
   },
 });
+
 
 

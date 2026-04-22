@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { logout as authLogout, User } from '@/features/auth/services/auth';
+import { tokenCache } from '@/utils/tokenCache';
 
 // ─────────── Key names used by axiosConfig interceptors ───────────
 export const TOKEN_KEY = 'saathi_token';
@@ -28,7 +29,7 @@ interface AuthState {
   // Legacy alias kept for login.tsx / register.tsx
   login: (user: User, token: string, refreshToken?: string | null) => Promise<void>;
 
-  // Clear local user state only (store logout is called from _layout.tsx subscriber)
+  // Clear local user state only
   clearUser: () => void;
 
   logout: () => Promise<void>;
@@ -45,12 +46,18 @@ export const useAuthStore = create<AuthState>()(
 
       // ─── Primary setter used after any successful auth ───
       setAuth: async (token, refreshToken, user) => {
-        // Persist to AsyncStorage so axiosConfig interceptor reads them
+        // 1. Warm the in-memory cache immediately (axiosConfig reads this on
+        //    the next request without any AsyncStorage round-trip)
+        tokenCache.set(token, refreshToken);
+
+        // 2. Persist to AsyncStorage so the interceptor can bootstrap on cold
+        //    start before Zustand has rehydrated
         await AsyncStorage.setItem(TOKEN_KEY, token);
         if (refreshToken) {
           await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
         }
         await AsyncStorage.setItem('saathi_user', JSON.stringify(user));
+
         set({ token, refreshToken, user, isAuthenticated: true, isLoading: false });
       },
 
@@ -70,14 +77,16 @@ export const useAuthStore = create<AuthState>()(
       setLoading: (isLoading) => set({ isLoading }),
 
       clearUser: () => {
+        tokenCache.clear();
         set({ user: null, token: null, refreshToken: null, isAuthenticated: false, isLoading: false });
       },
 
       logout: async () => {
+        tokenCache.clear();
         try {
           await authLogout(); // clears AsyncStorage keys
         } catch {
-          // ignore
+          // ignore network errors on logout
         }
         set({ user: null, token: null, refreshToken: null, isAuthenticated: false, isLoading: false });
       },
@@ -92,6 +101,22 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
       }),
+      // ── KEY FIX: warm the tokenCache the moment Zustand rehydrates from
+      // AsyncStorage on cold start.  Without this, the first API request fires
+      // before setAuth() is called and finds an empty cache → 401.
+      onRehydrateStorage: () => (state) => {
+        if (state?.token) {
+          console.log('[AuthStore] Rehydrated - warming tokenCache');
+          tokenCache.set(state.token, state.refreshToken ?? null);
+          // Also ensure the direct AsyncStorage keys are synced
+          AsyncStorage.setItem(TOKEN_KEY, state.token).catch(() => {});
+          if (state.refreshToken) {
+            AsyncStorage.setItem(REFRESH_TOKEN_KEY, state.refreshToken).catch(() => {});
+          }
+        } else {
+          console.log('[AuthStore] Rehydrated - no token found');
+        }
+      },
     }
   )
 );

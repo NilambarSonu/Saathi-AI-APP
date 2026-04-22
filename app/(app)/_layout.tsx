@@ -1,7 +1,8 @@
 import React, { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { Platform, View, ActivityIndicator } from 'react-native';
 import { Stack, Redirect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
+import { tokenCache } from '@/utils/tokenCache';
 import { registerForPushNotifications } from '@/services/notifications';
 import { registerDevice } from '@/features/auth/services/auth';
 
@@ -11,11 +12,21 @@ import * as NavigationBar from 'expo-navigation-bar';
 
 export default function AppLayout() {
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const isLoading = useAuthStore(s => s.isLoading);
   const user = useAuthStore(s => s.user);
 
+  // ── Register the auth-failure handler once.
+  // When axiosConfig fails to refresh a token (both access + refresh expired),
+  // it calls tokenCache.triggerAuthFailure() which runs this callback.
+  // This clears the Zustand store without creating a circular import:
+  //   axiosConfig → tokenCache → authStore (via callback, not import)
+  useEffect(() => {
+    tokenCache.onAuthFailure(() => {
+      useAuthStore.getState().clearUser();
+    });
+  }, []);
+
   // Hide the Android system navigation bar once.
-  // setVisibilityAsync is the only NavigationBar call that works in
-  // edge-to-edge mode. setPositionAsync / setBehaviorAsync throw WARNs there.
   useEffect(() => {
     if (Platform.OS === 'android') {
       NavigationBar.setVisibilityAsync('hidden').catch(() => {});
@@ -41,6 +52,18 @@ export default function AppLayout() {
     setupPushNotifications();
   }, [user?.id]);
 
+  // ── Wait for Zustand to finish rehydrating from AsyncStorage before
+  // deciding whether to redirect.  Without this guard, the layout briefly sees
+  // isAuthenticated=false (the store's default) and redirects to login even
+  // though the persisted session is valid.
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F0FDF4' }}>
+        <ActivityIndicator size="large" color="#10B981" />
+      </View>
+    );
+  }
+
   if (!isAuthenticated) {
     return <Redirect href="/(auth)/login" />;
   }
@@ -58,5 +81,3 @@ export default function AppLayout() {
     </Stack>
   );
 }
-
-
