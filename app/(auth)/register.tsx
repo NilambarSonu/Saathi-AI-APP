@@ -10,6 +10,7 @@ import { router } from 'expo-router';
 import { registerAccount, startSocialAuth } from '@/features/auth/services/auth';
 import { Colors } from '@/constants/Colors';
 import { useDarkModeTheme } from '@/context/ThemeContext';
+import { useTranslation } from '@/context/LanguageContext';
 import { useAuthStore } from '@/store/authStore';
 
 export default function RegisterScreen() {
@@ -25,6 +26,7 @@ export default function RegisterScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<null | 'google' | 'facebook' | 'x'>(null);
   const { setSession } = useAuthStore();
+  const { t } = useTranslation();
 
   const checkStrength = (pass: string) => {
     let score = 0;
@@ -76,11 +78,11 @@ export default function RegisterScreen() {
       return;
     }
     if (!email.trim() || !password) {
-      Alert.alert('Missing fields', 'Email and password are required.');
+      Alert.alert(t('auth.login.errorTitle'), t('auth.register.validationError'));
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert('Password mismatch', 'Passwords do not match.');
+      Alert.alert(t('auth.register.errorTitle'), t('auth.register.passwordMismatch'));
       return;
     }
     if (password.length < 8) {
@@ -108,8 +110,8 @@ export default function RegisterScreen() {
     } catch (err: any) {
       console.error('[Register] Error:', err);
       const serverMessage = err.response?.data?.message || err.response?.data?.error;
-      const errorMessage = serverMessage || err.message || 'Please check your connection and try again.';
-      Alert.alert('Registration Failed', errorMessage);
+      const errorMessage = serverMessage || err.message || t('auth.login.validationError');
+      Alert.alert(t('auth.register.errorTitle'), errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -130,11 +132,8 @@ export default function RegisterScreen() {
         >
           <View style={styles.heroOverlay}>
             <View style={styles.heroBadge}><Text style={{ fontSize: 20 }}>🌱</Text></View>
-            <Text style={styles.heroTitle}>
-              Empowering Farmers,{"\\n"}
-              <Text style={{ color: '#A8F0C0' }}>Transforming Agriculture.</Text>
-            </Text>
-            <Text style={styles.heroSub}>Join the smart farming revolution today</Text>
+            <Text style={styles.heroTitle}>{t('auth.register.title')}</Text>
+            <Text style={styles.heroSub}>{t('auth.register.subtitle')}</Text>
           </View>
         </ImageBackground>
 
@@ -145,11 +144,11 @@ export default function RegisterScreen() {
               <Text style={[styles.tabText, { color: theme.textSecondary }]}>Login</Text>
             </TouchableOpacity>
             <View style={[styles.tab, styles.tabActive, { backgroundColor: theme.surface }]}>
-              <Text style={[styles.tabText, { color: theme.primary }]}>Register</Text>
+              <Text style={[styles.tabText, { color: theme.primary }]}>{t('auth.register.title')}</Text>
             </View>
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>FULL NAME</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.fullName').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="user" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
@@ -163,7 +162,7 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>EMAIL ADDRESS</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.email').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="envelope" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
@@ -178,7 +177,7 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>PHONE (OPTIONAL)</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.phone').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="phone" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
@@ -192,7 +191,7 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>PASSWORD</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.password').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="lock" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
@@ -256,7 +255,7 @@ export default function RegisterScreen() {
             </>
           )}
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>CONFIRM PASSWORD</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.confirmPassword').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="lock" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
@@ -297,12 +296,12 @@ export default function RegisterScreen() {
           >
             {isLoading
               ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.btnPrimaryText}>Send OTP →</Text>}
+              : <Text style={styles.btnPrimaryText}>{t('auth.register.registerBtn')} →</Text>}
           </TouchableOpacity>
 
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: theme.sep1 }]} />
-            <Text style={[styles.dividerText, { color: theme.textMuted }]}>OR CONTINUE WITH</Text>
+            <Text style={[styles.dividerText, { color: theme.textMuted }]}>{t('auth.login.socialAuthTitle').toUpperCase()}</Text>
             <View style={[styles.dividerLine, { backgroundColor: theme.sep1 }]} />
           </View>
 

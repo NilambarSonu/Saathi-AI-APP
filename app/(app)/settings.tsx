@@ -11,6 +11,8 @@ import { Spacing } from '@/constants/Spacing';
 import { useAuthStore } from '@/store/authStore';
 import { useDarkModeTheme, useTheme } from '@/context/ThemeContext';
 import apiClient from '@/api/axiosConfig';
+import { useTranslation } from '@/context/LanguageContext';
+import apiClient from '@/api/axiosConfig';
 import { getUserData } from '@/features/auth/services/user';
 import { logout } from '@/features/auth/services/auth';
 import * as Sharing from 'expo-sharing';
@@ -19,16 +21,11 @@ const SETTINGS_KEY = 'saathi_settings';
 
 const LANGUAGES = [
   { code: 'en', label: '🇬🇧 English' },
-  { code: 'hi', label: '🇮🇳 हिंदी (Hindi)' },
-  { code: 'mr', label: '🇮🇳 मराठी (Marathi)' },
-  { code: 'te', label: '🇮🇳 తెలుగు (Telugu)' },
-  { code: 'ta', label: '🇮🇳 தமிழ் (Tamil)' },
-  { code: 'kn', label: '🇮🇳 ಕನ್ನಡ (Kannada)' },
-  { code: 'od', label: '🏳️ ଓଡ଼ିଆ (Odia)' },
+  { code: 'hi', label: '🇮🇳 हिन्दी' },
+  { code: 'od', label: '🇮🇳 ଓଡ଼ିଆ' },
 ];
 
 interface SettingsState {
-  language: string;
   autoSync: boolean;
 }
 
@@ -76,10 +73,10 @@ export default function SettingsScreen() {
   const { clearUser } = useAuthStore();
   const { setMode, isDarkMode } = useTheme();
   const { theme, isDark } = useDarkModeTheme();
+  const { t, locale, changeLanguage } = useTranslation();
   const backScale = useRef(new Animated.Value(1)).current;
   
   const [settings, setSettings] = useState<SettingsState>({
-    language: 'en',
     autoSync: true,
   });
   const [isExporting, setIsExporting] = useState(false);
@@ -92,7 +89,6 @@ export default function SettingsScreen() {
         try { 
           const parsed = JSON.parse(val);
           setSettings({
-            language: parsed.language || 'en',
             autoSync: parsed.autoSync !== undefined ? parsed.autoSync : true,
           });
         } catch {}
@@ -102,7 +98,14 @@ export default function SettingsScreen() {
 
   const saveSettings = (newSettings: SettingsState) => {
     setSettings(newSettings);
-    AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(newSettings));
+    AsyncStorage.getItem(SETTINGS_KEY).then(val => {
+      let existing = { language: locale };
+      if (val) {
+        try { existing = JSON.parse(val); } catch {}
+      }
+      const combined = { ...existing, ...newSettings };
+      AsyncStorage.setItem(SETTINGS_KEY, JSON.stringify(combined));
+    });
   };
 
   const handleToggle = (key: keyof SettingsState, value: boolean) => {
@@ -110,7 +113,7 @@ export default function SettingsScreen() {
   };
 
   const handleLanguageChange = (code: string) => {
-    saveSettings({ ...settings, language: code });
+    changeLanguage(code as any);
     setShowLangPicker(false);
   };
 
@@ -118,20 +121,22 @@ export default function SettingsScreen() {
     setIsExporting(true);
     try {
       const data = await getUserData('json');
-      const jsonString = JSON.stringify(data, null, 2);
+      const count = Object.keys(data).length;
       if (await Sharing.isAvailableAsync()) {
         Alert.alert(
-          'Data Ready',
-          `Your data export has ${Object.keys(data).length} records. Sharing now...`
+          t('settings.dataSection.exportAlertTitle'),
+          t('settings.dataSection.exportAlertDesc', { count })
         );
       } else {
+        const jsonString = JSON.stringify(data, null, 2);
+        const size = jsonString.length > 200 ? jsonString.substring(0, 200) + '...' : jsonString;
         Alert.alert(
-          'Export Data',
-          `Records: ${jsonString.length > 200 ? jsonString.substring(0, 200) + '...' : jsonString}\n\nVisit saathiai.org/account to download your full data export.`
+          t('settings.dataSection.exportAlertTitle'),
+          t('settings.dataSection.exportAlertFallback', { size })
         );
       }
     } catch (e: any) {
-      Alert.alert('Export Failed', e.message || 'Failed to export data. Try visiting saathiai.org/account to download your data.');
+      Alert.alert(t('settings.dataSection.exportFailed'), e.message || t('settings.dataSection.exportFailed'));
     } finally {
       setIsExporting(false);
     }
@@ -139,12 +144,12 @@ export default function SettingsScreen() {
 
   const handleDeleteAccount = () => {
     Alert.alert(
-      'Delete Account?',
-      'This will permanently delete your account, all soil tests, AI recommendations, and chat history. This cannot be undone.',
+      t('settings.dangerZone.deleteAlertTitle'),
+      t('settings.dangerZone.deleteAlertDesc'),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: t('common.cancel'), style: 'cancel' },
         {
-          text: 'Yes, Delete My Account',
+          text: t('settings.dangerZone.deleteBtn'),
           style: 'destructive',
           onPress: async () => {
             setIsDeleting(true);
@@ -154,7 +159,7 @@ export default function SettingsScreen() {
               clearUser();
               router.replace('/(auth)/login');
             } catch (e: any) {
-              Alert.alert('Error', e.message || 'Failed to delete account.');
+              Alert.alert(t('common.error'), e.message || 'Failed to delete account.');
             } finally {
               setIsDeleting(false);
             }
@@ -164,7 +169,7 @@ export default function SettingsScreen() {
     );
   };
 
-  const selectedLang = LANGUAGES.find(l => l.code === settings.language);
+  const selectedLang = LANGUAGES.find(l => l.code === locale);
 
   const animateBack = (toValue: number) => {
     Animated.spring(backScale, {
@@ -181,9 +186,9 @@ export default function SettingsScreen() {
   };
 
   const summaryItems = [
-    { label: 'Theme', value: isDarkMode ? 'Dark' : 'Light', icon: isDarkMode ? 'moon' : 'sunny', color: theme.purple },
-    { label: 'Language', value: selectedLang?.label?.replace(/^.*?\s/, '') || 'English', icon: 'language', color: theme.blue },
-    { label: 'Sync', value: settings.autoSync ? 'On' : 'Off', icon: settings.autoSync ? 'cloud-done' : 'cloud-offline', color: settings.autoSync ? theme.primary : theme.textMuted },
+    { label: t('settings.summary.theme'), value: isDarkMode ? t('settings.summary.themeDark') : t('settings.summary.themeLight'), icon: isDarkMode ? 'moon' : 'sunny', color: theme.purple },
+    { label: t('settings.summary.language'), value: selectedLang?.label?.replace(/^.*?\s/, '') || 'English', icon: 'language', color: theme.blue },
+    { label: t('settings.summary.sync'), value: settings.autoSync ? t('settings.summary.syncOn') : t('settings.summary.syncOff'), icon: settings.autoSync ? 'cloud-done' : 'cloud-offline', color: settings.autoSync ? theme.primary : theme.textMuted },
   ];
 
   return (
@@ -209,8 +214,8 @@ export default function SettingsScreen() {
             </Pressable>
           </Animated.View>
           <View style={styles.headerCopy}>
-            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Settings</Text>
-            <Text style={[styles.headerSub, { color: theme.textSecondary }]}>Customize your Saathi AI experience</Text>
+            <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>{t('settings.title')}</Text>
+            <Text style={[styles.headerSub, { color: theme.textSecondary }]}>{t('settings.subtitle')}</Text>
           </View>
         </View>
       </View>
@@ -219,8 +224,8 @@ export default function SettingsScreen() {
         <View style={[styles.summaryCard, { backgroundColor: isDark ? theme.surface : theme.bg0, borderColor: theme.borderLight }]}>
           <View style={styles.summaryTop}>
             <View>
-              <Text style={[styles.summaryEyebrow, { color: theme.primary }]}>PROFILE SETTINGS</Text>
-              <Text style={[styles.summaryTitle, { color: theme.textPrimary }]}>Your app preferences</Text>
+              <Text style={[styles.summaryEyebrow, { color: theme.primary }]}>{t('settings.summary.eyebrow')}</Text>
+              <Text style={[styles.summaryTitle, { color: theme.textPrimary }]}>{t('settings.summary.title')}</Text>
             </View>
             <View style={[styles.summaryBadge, { backgroundColor: theme.primaryLight }]}>
               <Ionicons name="options-outline" size={18} color={theme.primary} />
@@ -239,11 +244,10 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Appearance */}
-        <SectionCard title="Appearance" subtitle="Display and visual comfort" icon="moon-outline" color={theme.purple} theme={theme}>
+        <SectionCard title={t('settings.appearance.title')} subtitle={t('settings.appearance.subtitle')} icon="moon-outline" color={theme.purple} theme={theme}>
           <ToggleRow
-            label="Dark Mode"
-            description="Switch to dark theme for better low-light visibility"
+            label={t('settings.appearance.toggleLabel')}
+            description={t('settings.appearance.toggleDesc')}
             value={isDarkMode}
             onToggle={(v) => setMode(v ? 'dark' : 'light')}
             theme={theme}
@@ -251,10 +255,9 @@ export default function SettingsScreen() {
           />
         </SectionCard>
 
-        {/* Language */}
-        <SectionCard title="Language & Region" subtitle="Choose the interface language" icon="globe-outline" color={theme.blue} theme={theme}>
+        <SectionCard title={t('settings.languageSection.title')} subtitle={t('settings.languageSection.subtitle')} icon="globe-outline" color={theme.blue} theme={theme}>
           <View style={styles.langSection}>
-            <Text style={[styles.toggleLabel, { color: theme.textPrimary }]}>Interface Language</Text>
+            <Text style={[styles.toggleLabel, { color: theme.textPrimary }]}>{t('settings.languageSection.label')}</Text>
             <Pressable style={[styles.langSelector, { backgroundColor: theme.background, borderColor: theme.border }]} onPress={() => setShowLangPicker(!showLangPicker)}>
               <Text style={[styles.langSelected, { color: theme.textPrimary }]}>{selectedLang?.label || '🇬🇧 English'}</Text>
               <Ionicons name={showLangPicker ? 'chevron-up' : 'chevron-down'} size={16} color={theme.textSecondary} />
@@ -267,14 +270,14 @@ export default function SettingsScreen() {
                     style={[
                       styles.langOption,
                       isDark && { borderBottomColor: theme.borderLight },
-                      settings.language === lang.code && [styles.langOptionActive, { backgroundColor: theme.surfaceAlt }],
+                      locale === lang.code && [styles.langOptionActive, { backgroundColor: theme.surfaceAlt }],
                     ]}
                     onPress={() => handleLanguageChange(lang.code)}
                   >
-                    <Text style={[styles.langOptionText, { color: theme.textSecondary }, settings.language === lang.code && [styles.langOptionTextActive, { color: theme.primary }]]}>
+                    <Text style={[styles.langOptionText, { color: theme.textSecondary }, locale === lang.code && [styles.langOptionTextActive, { color: theme.primary }]]}>
                       {lang.label}
                     </Text>
-                    {settings.language === lang.code && (
+                    {locale === lang.code && (
                       <Ionicons name="checkmark" size={16} color={theme.primary} />
                     )}
                   </Pressable>
@@ -284,11 +287,10 @@ export default function SettingsScreen() {
           </View>
         </SectionCard>
 
-        {/* Sync & Storage */}
-        <SectionCard title="Sync & Storage" subtitle="Keep your soil test data backed up" icon="phone-portrait-outline" color={theme.primary} theme={theme}>
+        <SectionCard title={t('settings.syncSection.title')} subtitle={t('settings.syncSection.subtitle')} icon="phone-portrait-outline" color={theme.primary} theme={theme}>
           <ToggleRow
-            label="Auto Sync"
-            description="Automatically sync soil test data when connected to the internet"
+            label={t('settings.syncSection.label')}
+            description={t('settings.syncSection.desc')}
             value={settings.autoSync}
             onToggle={(v) => handleToggle('autoSync', v)}
             theme={theme}
@@ -296,8 +298,7 @@ export default function SettingsScreen() {
           />
         </SectionCard>
 
-        {/* Data Management */}
-        <SectionCard title="Data Management" subtitle="Download or move your account data" icon="server-outline" color={theme.amber} theme={theme}>
+        <SectionCard title={t('settings.dataSection.title')} subtitle={t('settings.dataSection.subtitle')} icon="server-outline" color={theme.amber} theme={theme}>
           <Pressable
             style={({ pressed }) => [
               styles.actionBtn,
@@ -317,50 +318,20 @@ export default function SettingsScreen() {
             </View>
             <View style={styles.actionCopy}>
               <Text style={[styles.actionBtnText, { color: theme.textPrimary }]}>
-                {isExporting ? 'Exporting...' : 'Export All Data'}
+                {isExporting ? t('common.loading') : t('settings.dataSection.btnText')}
               </Text>
-              <Text style={[styles.actionBtnSub, { color: theme.textSecondary }]}>JSON file with soil tests and AI recommendations</Text>
+              <Text style={[styles.actionBtnSub, { color: theme.textSecondary }]}>{t('settings.dataSection.btnDesc')}</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
           </Pressable>
         </SectionCard>
 
-        {/* Danger Zone */}
         <View style={[styles.card, styles.dangerCard, { backgroundColor: isDark ? '#2D1A1A' : '#FFF5F5', borderColor: theme.error + '40' }]}>
           <View style={styles.cardHeader}>
             <View style={[styles.cardIconBg, { backgroundColor: theme.error + '20' }]}>
               <Ionicons name="warning-outline" size={18} color={theme.error} />
             </View>
             <View style={styles.cardHeaderText}>
-              <Text style={[styles.cardTitle, { color: theme.error }]}>Danger Zone</Text>
-              <Text style={[styles.cardSubtitle, { color: theme.error + 'AA' }]}>Irreversible account actions</Text>
-            </View>
-          </View>
-          <Text style={[styles.dangerNote, { color: theme.error + 'AA' }]}>Irreversible actions — proceed with caution</Text>
-          <View style={styles.dangerRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.toggleLabel, { color: theme.error }]}>Delete Account</Text>
-              <Text style={[styles.toggleDesc, { color: theme.textSecondary }]}>Permanently delete your account and all data</Text>
-            </View>
-            <Pressable
-              style={[styles.deleteBtn, { backgroundColor: theme.error }, isDeleting && { opacity: 0.6 }]}
-              onPress={handleDeleteAccount}
-              disabled={isDeleting}
-            >
-              {isDeleting ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Ionicons name="trash-outline" size={16} color="#fff" />
-              )}
-              <Text style={styles.deleteBtnText}>{isDeleting ? 'Deleting...' : 'Delete'}</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={{ height: 120 }} />
-      </ScrollView>
-    </View>
-  );
 }
 
 const styles = StyleSheet.create({

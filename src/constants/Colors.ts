@@ -38,7 +38,7 @@ type ThemePalette = typeof common & {
   statsGreen: [string, string];
   statsAmber: [string, string];
   statsBlue: [string, string];
-  heroGradient: [string, string];
+  heroGradient: [string, string] | [string, string, string];
   heroBackground: string;
   popupHandle: string;
   modalBackground: string;
@@ -158,8 +158,8 @@ const dark: ThemePalette = {
   statsGreen: ['rgba(32, 83, 62, 0.94)', 'rgba(21, 43, 32, 0.96)'],
   statsAmber: ['rgba(92, 66, 26, 0.94)', 'rgba(38, 31, 20, 0.96)'],
   statsBlue: ['rgba(30, 61, 101, 0.94)', 'rgba(22, 32, 51, 0.96)'],
-  heroGradient: ['#31251C', '#1B211B'],
-  heroBackground: '#211D18',
+  heroGradient: ['rgba(249, 115, 22, 0.20)', 'rgba(16, 22, 17, 0.90)', 'rgba(124, 45, 18, 0.35)'],
+  heroBackground: '#101611',
   popupHandle: '#4B5B50',
   modalBackground: '#18211B',
   tabBarBackground: 'rgba(18, 27, 21, 0.86)',
@@ -185,7 +185,7 @@ const dark: ThemePalette = {
   
   heroText: '#F2F4F3',
   heroSubtext: '#C2B8AA',
-  heroBorder: 'rgba(251, 191, 36, 0.22)',
+  heroBorder: 'rgba(249, 115, 22, 0.16)',
   heroBtnGradient: ['#F97316', '#FBBF24'],
 };
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -13,11 +13,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDarkModeTheme } from '@/context/ThemeContext';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 
@@ -76,10 +78,50 @@ const IMPACT_ITEMS = [
 ];
 
 const TECH_ITEMS = [
-  { title: 'AI Powered', body: 'Soil-aware intelligence for personalized farm decisions.', icon: 'hardware-chip-outline' as IconName, color: '#8B5CF6' },
-  { title: 'Smart Sensors', body: 'Agni scanner reads core soil signals in the field.', icon: 'radio-outline' as IconName, color: '#10B981' },
-  { title: 'Cloud Analytics', body: 'History, insights and recommendations stay connected.', icon: 'cloud-outline' as IconName, color: '#3B82F6' },
-  { title: 'Real-time Processing', body: 'Guidance is generated when the farmer needs it.', icon: 'pulse-outline' as IconName, color: '#F97316' },
+  {
+    title: 'AI Powered',
+    body: 'Soil-aware intelligence for personalized farm decisions.',
+    icon: 'hardware-chip-outline' as IconName,
+    color: '#8B5CF6',
+    capsuleColors: ['#8B5CF6', '#5B21B6'] as [string, string],
+    gradientDark: ['rgba(139, 92, 246, 0.12)', 'rgba(139, 92, 246, 0.03)'] as [string, string],
+    gradientLight: ['rgba(250, 248, 255, 0.95)', 'rgba(243, 239, 254, 0.85)'] as [string, string],
+    borderColorDark: 'rgba(139, 92, 246, 0.20)',
+    borderColorLight: 'rgba(139, 92, 246, 0.10)',
+  },
+  {
+    title: 'Smart Sensors',
+    body: 'Agni scanner reads core soil signals in the field.',
+    icon: 'radio-outline' as IconName,
+    color: '#10B981',
+    capsuleColors: ['#10B981', '#06B6D4'] as [string, string],
+    gradientDark: ['rgba(16, 185, 129, 0.12)', 'rgba(16, 185, 129, 0.03)'] as [string, string],
+    gradientLight: ['rgba(244, 254, 248, 0.95)', 'rgba(230, 252, 238, 0.85)'] as [string, string],
+    borderColorDark: 'rgba(16, 185, 129, 0.20)',
+    borderColorLight: 'rgba(16, 185, 129, 0.10)',
+  },
+  {
+    title: 'Cloud Analytics',
+    body: 'History, insights and recommendations stay connected.',
+    icon: 'cloud-outline' as IconName,
+    color: '#3B82F6',
+    capsuleColors: ['#3B82F6', '#1D4ED8'] as [string, string],
+    gradientDark: ['rgba(59, 130, 246, 0.12)', 'rgba(59, 130, 246, 0.03)'] as [string, string],
+    gradientLight: ['rgba(244, 249, 255, 0.95)', 'rgba(230, 241, 254, 0.85)'] as [string, string],
+    borderColorDark: 'rgba(59, 130, 246, 0.20)',
+    borderColorLight: 'rgba(59, 130, 246, 0.10)',
+  },
+  {
+    title: 'Real-time Processing',
+    body: 'Guidance is generated when the farmer needs it.',
+    icon: 'pulse-outline' as IconName,
+    color: '#F97316',
+    capsuleColors: ['#F97316', '#F59E0B'] as [string, string],
+    gradientDark: ['rgba(249, 115, 22, 0.12)', 'rgba(249, 115, 22, 0.03)'] as [string, string],
+    gradientLight: ['rgba(255, 250, 244, 0.95)', 'rgba(255, 242, 225, 0.85)'] as [string, string],
+    borderColorDark: 'rgba(249, 115, 22, 0.20)',
+    borderColorLight: 'rgba(249, 115, 22, 0.10)',
+  },
 ];
 
 const DEVICE_POINTS = [
@@ -95,8 +137,10 @@ const TEAM_ITEMS = [
     college: 'Bhadrak Autonomous College, BCA',
     image: require('../../assets/images/founder.png'),
     accent: '#38BDF8',
-    roleBg: 'rgba(56, 189, 248, 0.14)',
-    gradient: ['rgba(56, 189, 248, 0.16)', 'rgba(59, 130, 246, 0.05)'] as [string, string],
+    gradientDark: ['rgba(56, 189, 248, 0.20)', 'rgba(16, 22, 17, 0.90)', 'rgba(8, 47, 73, 0.35)'] as [string, string, string],
+    gradientLight: ['rgba(224, 242, 254, 0.75)', 'rgba(255, 255, 255, 0.94)', 'rgba(186, 230, 253, 0.40)'] as [string, string, string],
+    borderDark: ['#00F2FE', '#8B5CF6', '#00F2FE'] as [string, string, string],
+    borderLight: ['#38BDF8', '#A855F7', '#38BDF8'] as [string, string, string],
   },
   {
     name: 'Sanatan Sethi',
@@ -104,27 +148,99 @@ const TEAM_ITEMS = [
     college: 'Bhadrak Autonomous College, BCA',
     image: require('../../assets/images/co-founder.png'),
     accent: '#22C55E',
-    roleBg: 'rgba(34, 197, 94, 0.14)',
-    gradient: ['rgba(34, 197, 94, 0.16)', 'rgba(16, 185, 129, 0.05)'] as [string, string],
+    gradientDark: ['rgba(34, 197, 94, 0.18)', 'rgba(16, 22, 17, 0.90)', 'rgba(6, 78, 59, 0.35)'] as [string, string, string],
+    gradientLight: ['rgba(220, 252, 231, 0.75)', 'rgba(255, 255, 255, 0.94)', 'rgba(187, 247, 208, 0.40)'] as [string, string, string],
+    borderDark: ['#10B981', '#A3E635', '#10B981'] as [string, string, string],
+    borderLight: ['#22C55E', '#84CC16', '#22C55E'] as [string, string, string],
   },
 ];
 
 const TESTIMONIALS = [
   {
     name: 'Mahendra Behera',
-    subtitle: 'Farmer from Balasore',
-    review: 'Saathi AI helped me understand my soil better. The Odia recommendations made it so easy to follow, and my crop yield improved significantly this season.',
-    icon: 'person-add-outline' as IconName,
-    color: '#22C55E',
+    initials: 'MB',
+    subtitle: 'Soro Village, Balasore',
+    review: 'I did not believe a phone app could understand my soil. But the instant Odia advice showed me why my paddy leaves turned yellow. Our yield was the healthiest in five years.',
+    icon: 'leaf-outline' as IconName,
+    color: '#10B981',
+    gradientDark: ['rgba(20, 36, 26, 0.85)', 'rgba(16, 22, 17, 0.95)'] as [string, string],
+    gradientLight: ['#F3F9F5', '#FCFAF5'] as [string, string],
+    borderColorDark: 'rgba(16, 185, 129, 0.22)',
+    borderColorLight: 'rgba(16, 185, 129, 0.12)',
   },
   {
     name: 'Ramamani Behera',
-    subtitle: 'Progressive Farmer, Cuttack',
-    review: 'The AI chat feature is amazing! I can ask questions anytime and get instant answers in my language. It feels like having an agricultural expert in my pocket.',
-    icon: 'people-outline' as IconName,
-    color: '#3B82F6',
+    initials: 'RB',
+    subtitle: 'Niali Village, Cuttack',
+    review: 'We used to wait two weeks for soil reports from the city. Now, with the scanner, we get recommendations immediately. It feels like having an agricultural expert in our pockets.',
+    icon: 'sunny-outline' as IconName,
+    color: '#D97706',
+    gradientDark: ['rgba(40, 28, 16, 0.85)', 'rgba(22, 18, 14, 0.95)'] as [string, string],
+    gradientLight: ['#FCF7EE', '#FCFAF5'] as [string, string],
+    borderColorDark: 'rgba(217, 119, 6, 0.22)',
+    borderColorLight: 'rgba(217, 119, 6, 0.12)',
   },
 ];
+
+const TRANSLATIONS: Record<string, Record<string, string>> = {
+  en: {
+    fullName: "Full Name",
+    emailAddress: "Email Address",
+    message: "Message",
+    enterName: "Enter your name",
+    enterEmail: "Enter your email",
+    enterMessage: "Enter your message",
+    sendButton: "Send Message",
+    sending: "Sending...",
+    success: "Message sent successfully!",
+    error: "Failed to send message",
+    missingFields: "Missing Fields",
+    fillAllFields: "Please fill all fields before sending.",
+    invalidEmail: "Invalid Email",
+    enterValidEmail: "Please enter a valid email address.",
+    nameTooLong: "Name is too long (max 100 characters).",
+    emailTooLong: "Email is too long (max 255 characters).",
+    messageTooLong: "Message is too long (max 5000 characters).",
+  },
+  hi: {
+    fullName: "पूरा नाम",
+    emailAddress: "ईमेल पता",
+    message: "संदेश",
+    enterName: "अपना नाम दर्ज करें",
+    enterEmail: "अपना ईमेल दर्ज करें",
+    enterMessage: "अपना संदेश दर्ज करें",
+    sendButton: "संदेश भेजें",
+    sending: "भेजा जा रहा है...",
+    success: "संदेश सफलतापूर्वक भेजा गया!",
+    error: "संदेश भेजने में विफल",
+    missingFields: "अधूरे फ़ील्ड",
+    fillAllFields: "कृपया भेजने से पहले सभी फ़ील्ड भरें।",
+    invalidEmail: "अमान्य ईमेल",
+    enterValidEmail: "कृपया एक मान्य ईमेल पता दर्ज करें।",
+    nameTooLong: "नाम बहुत लंबा है (अधिकतम 100 वर्ण)।",
+    emailTooLong: "ईमेल बहुत लंबा है (अधिकतम 255 वर्ण)।",
+    messageTooLong: "संदेश बहुत लंबा है (अधिकतम 5000 वर्ण)।",
+  },
+  od: {
+    fullName: "ସମ୍ପୂର୍ଣ ନାମ",
+    emailAddress: "ଇମେଲ ଠିକାଣା",
+    message: "ବାର୍ତ୍ତା",
+    enterName: "ଆପଣଙ୍କ ନାମ ଦର୍ଜ କରନ୍ତୁ",
+    enterEmail: "ଆପଣଙ୍କ ଇମେଲ ଦର୍ଜ କରନ୍ତୁ",
+    enterMessage: "ଆପଣଙ୍କ ବାର୍ତ୍ତା ଦର୍ଜ କରନ୍ତୁ",
+    sendButton: "ବାର୍ତ୍ତା ପଠାନ୍ତୁ",
+    sending: "ପଠାଯାଉଛି...",
+    success: "ବାର୍ତ୍ତା ସଫଳତାପୂର୍ବକ ପଠାଗଲା!",
+    error: "ବାର୍ତ୍ତା ପଠାଇବାରେ ବିଫଳ ହେଲା",
+    missingFields: "ଅସମ୍ପୂର୍ଣ୍ଣ ତଥ୍ୟ",
+    fillAllFields: "ଦୟାକରି ପଠାଇବା ପୂର୍ବରୁ ସମସ୍ତ ବିବରଣୀ ପୂରଣ କରନ୍ତୁ ।",
+    invalidEmail: "ଅମାନ୍ୟ ଇମେଲ",
+    enterValidEmail: "ଦୟାକରି ଏକ ବୈଧ ଇମେଲ ଠିକାଣା ପ୍ରବେଶ କରନ୍ତୁ ।",
+    nameTooLong: "ନାମ ବହୁତ ବଡ଼ ଅଟେ (ସର୍ବାଧିକ ୧୦୦ ଅକ୍ଷର) ।",
+    emailTooLong: "ଇମେଲ ବହୁତ ବଡ଼ ଅଟେ (ସର୍ବାଧିକ ୨୫୫ ଅକ୍ଷର) ।",
+    messageTooLong: "ବାର୍ତ୍ତା ବହୁତ ବଡ଼ ଅଟେ (ସର୍ବାଧିକ ୫୦୦୦ ଅକ୍ଷର) ।",
+  }
+};
 
 export default function AboutScreen() {
   const router = useRouter();
@@ -134,6 +250,25 @@ export default function AboutScreen() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [lang, setLang] = useState('en');
+
+  useEffect(() => {
+    AsyncStorage.getItem('saathi_settings').then(val => {
+      if (val) {
+        try {
+          const parsed = JSON.parse(val);
+          if (parsed.language) {
+            setLang(parsed.language);
+          }
+        } catch {}
+      }
+    });
+  }, []);
+
+  const t = (key: string): string => {
+    const currentLang = TRANSLATIONS[lang] ? lang : 'en';
+    return TRANSLATIONS[currentLang]?.[key] || TRANSLATIONS['en']?.[key] || key;
+  };
 
   const featureItems = useMemo(
     () => FEATURE_ITEMS.map(item => ({ ...item, tint: isDark ? `${item.color}24` : `${item.color}14` })),
@@ -143,16 +278,69 @@ export default function AboutScreen() {
   const topPad = insets.top || (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
 
   const handleSend = async () => {
-    if (!fullName.trim() || !email.trim() || !message.trim()) {
-      Alert.alert('Missing Fields', 'Please fill all fields before sending.');
+    const trimmedName = fullName.trim();
+    const trimmedEmail = email.trim();
+    const trimmedMessage = message.trim();
+
+    if (!trimmedName || !trimmedEmail || !trimmedMessage) {
+      Alert.alert(t('missingFields'), t('fillAllFields'));
+      return;
+    }
+
+    if (trimmedName.length > 100) {
+      Alert.alert(t('missingFields'), t('nameTooLong'));
+      return;
+    }
+
+    if (trimmedEmail.length > 255) {
+      Alert.alert(t('invalidEmail'), t('emailTooLong'));
+      return;
+    }
+
+    if (!trimmedEmail.includes('@') || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      Alert.alert(t('invalidEmail'), t('enterValidEmail'));
+      return;
+    }
+
+    if (trimmedMessage.length > 5000) {
+      Alert.alert(t('missingFields'), t('messageTooLong'));
       return;
     }
 
     setSending(true);
     try {
-      const subject = encodeURIComponent(`Message from ${fullName.trim()}`);
-      const body = encodeURIComponent(`${message.trim()}\n\nFrom: ${fullName.trim()}\nEmail: ${email.trim()}`);
-      await Linking.openURL(`mailto:saathi.ai.innovation@gmail.com?subject=${subject}&body=${body}`);
+      const response = await axios.post(
+        'https://www.saathiai.org/api/contact',
+        {
+          name: trimmedName,
+          email: trimmedEmail,
+          message: trimmedMessage,
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 30000,
+        }
+      );
+
+      if (response.status === 200 && response.data?.success) {
+        Alert.alert(t('success'), t('success'));
+        setFullName('');
+        setEmail('');
+        setMessage('');
+      } else {
+        const errorMsg = response.data?.error || t('error');
+        Alert.alert(t('error'), errorMsg);
+      }
+    } catch (e: any) {
+      let errorMsg = t('error');
+      if (e.response?.data?.error) {
+        errorMsg = e.response.data.error;
+      } else if (e.message) {
+        errorMsg = e.message;
+      }
+      Alert.alert(t('error'), errorMsg);
     } finally {
       setSending(false);
     }
@@ -174,19 +362,36 @@ export default function AboutScreen() {
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroll}>
         <LinearGradient
-          colors={isDark ? ['#193120', '#101611'] : ['#ECFDF5', '#FFF7ED']}
+          colors={isDark ? ['#1C2521', '#111714'] : ['#ECFDF5', '#FFF7ED']}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[styles.hero, { borderColor: isDark ? 'rgba(110,231,183,0.18)' : 'rgba(26,123,60,0.12)' }]}
+          style={[
+            styles.hero,
+            {
+              borderColor: isDark ? 'rgba(52, 211, 153, 0.18)' : 'rgba(26,123,60,0.12)',
+              shadowColor: '#000000',
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: isDark ? 0.38 : 0.06,
+              shadowRadius: isDark ? 22 : 12,
+              elevation: isDark ? 8 : 3,
+            }
+          ]}
         >
-          <View style={[styles.heroOrb, styles.heroOrbOne, { backgroundColor: isDark ? 'rgba(110,231,183,0.16)' : 'rgba(16,185,129,0.18)' }]} />
-          <View style={[styles.heroOrb, styles.heroOrbTwo, { backgroundColor: isDark ? 'rgba(251,191,36,0.14)' : 'rgba(245,158,11,0.18)' }]} />
+          <View style={[styles.heroOrb, styles.heroOrbOne, { backgroundColor: isDark ? 'rgba(52,211,153,0.08)' : 'rgba(16,185,129,0.18)' }]} />
+          <View style={[styles.heroOrb, styles.heroOrbTwo, { backgroundColor: isDark ? 'rgba(251,191,36,0.05)' : 'rgba(245,158,11,0.18)' }]} />
           <View style={styles.heroTop}>
-            <View style={[styles.heroLogoShell, { backgroundColor: isDark ? 'rgba(110,231,183,0.14)' : '#FFFFFF' }]}>
+            <View style={[
+              styles.heroLogoShell,
+              {
+                backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : '#FFFFFF',
+                borderColor: isDark ? 'rgba(52, 211, 153, 0.15)' : 'rgba(0,0,0,0.05)',
+                borderWidth: isDark ? 1 : 0
+              }
+            ]}>
               <Image source={require('../../assets/images/favicon.png')} style={styles.heroLogo} />
             </View>
             <View style={[styles.heroChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.72)', borderColor: isDark ? theme.sep2 : 'rgba(255,255,255,0.9)' }]}>
-              <Ionicons name="shield-checkmark-outline" size={14} color={theme.primary} />
+              <Ionicons name="shield-checkmark-outline" size={14} color={isDark ? '#34D399' : theme.primary} />
               <Text style={[styles.heroChipText, { color: theme.textPrimary }]}>Farmer-first agri intelligence</Text>
             </View>
           </View>
@@ -200,15 +405,25 @@ export default function AboutScreen() {
               ['sparkles-outline', 'AI'],
               ['earth-outline', 'Rural Ready'],
             ].map(([icon, label]) => (
-              <View key={label} style={[styles.heroMini, { backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.74)' }]}>
-                <Ionicons name={icon as IconName} size={15} color={theme.primary} />
+              <View
+                key={label}
+                style={[
+                  styles.heroMini,
+                  {
+                    backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.74)',
+                    borderWidth: isDark ? 1 : 0,
+                    borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'transparent',
+                  }
+                ]}
+              >
+                <Ionicons name={icon as IconName} size={15} color={isDark ? '#34D399' : theme.primary} />
                 <Text style={[styles.heroMiniText, { color: theme.textPrimary }]}>{label}</Text>
               </View>
             ))}
           </View>
         </LinearGradient>
 
-        <SectionHeader eyebrow="OUR WHY" title="Built to remove farming guesswork" theme={theme} />
+        <SectionHeader eyebrow="01 / MISSION" title="Built to remove farming guesswork" theme={theme} />
         <View style={[styles.missionCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <View style={[styles.missionIcon, { backgroundColor: theme.primaryLight }]}>
             <Ionicons name="heart-outline" size={24} color={theme.primary} />
@@ -226,7 +441,7 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        <SectionHeader eyebrow="WHAT IT DOES" title="A complete farm intelligence companion" theme={theme} />
+        <SectionHeader eyebrow="02 / ECOSYSTEM" title="A complete farm intelligence companion" theme={theme} />
         <View style={styles.featureGrid}>
           {featureItems.map(item => (
             <View key={item.title} style={[styles.featureCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
@@ -239,7 +454,8 @@ export default function AboutScreen() {
           ))}
         </View>
 
-        <SectionHeader eyebrow="AGNI DEVICE" title="The soil scanner behind the intelligence" theme={theme} />
+        <View style={styles.sectionGap} />
+
         <LinearGradient
           colors={isDark ? ['#202B24', '#121A14'] : ['#FFF7ED', '#ECFDF5']}
           start={{ x: 0, y: 0 }}
@@ -269,7 +485,8 @@ export default function AboutScreen() {
           </View>
         </LinearGradient>
 
-        <SectionHeader eyebrow="IMPACT" title="Designed for speed, clarity and scale" theme={theme} />
+        <View style={styles.sectionGap} />
+
         <View style={styles.impactGrid}>
           {IMPACT_ITEMS.map(item => (
             <View key={item.label} style={[styles.impactCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
@@ -282,7 +499,8 @@ export default function AboutScreen() {
           ))}
         </View>
 
-        <SectionHeader eyebrow="FARMER-FIRST" title="Technology that feels familiar" theme={theme} />
+        <View style={styles.sectionGap} />
+
         <View style={[styles.farmerCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <LinearGradient
             colors={isDark ? ['rgba(16,185,129,0.16)', 'rgba(245,158,11,0.08)'] : ['#ECFDF5', '#FFFBEB']}
@@ -298,72 +516,186 @@ export default function AboutScreen() {
           </Text>
         </View>
 
-        <SectionHeader eyebrow="BUILDERS" title="Meet Our Team" theme={theme} />
+        <SectionHeader eyebrow="03 / STACK" title="Modern stack, grounded in agriculture" theme={theme} />
+        <View style={styles.techGrid}>
+          {TECH_ITEMS.map(item => (
+            <LinearGradient
+              key={item.title}
+              colors={isDark ? item.gradientDark : item.gradientLight}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.techCard,
+                {
+                  borderColor: isDark ? item.borderColorDark : item.borderColorLight,
+                  shadowColor: item.color,
+                  shadowOpacity: isDark ? 0.05 : 0.03,
+                  shadowRadius: 12,
+                  shadowOffset: { width: 0, height: 4 },
+                  elevation: isDark ? 0 : 2,
+                  backgroundColor: isDark ? '#141A16' : '#FFFFFF',
+                }
+              ]}
+            >
+              {/* Left Side: Vibrant colored background capsule with white icon */}
+              <LinearGradient
+                colors={item.capsuleColors}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={[
+                  styles.techIconCapsule,
+                  {
+                    shadowColor: item.color,
+                    shadowOpacity: isDark ? 0.35 : 0.22,
+                    shadowRadius: 6,
+                    shadowOffset: { width: 0, height: 2 },
+                  }
+                ]}
+              >
+                <Ionicons name={item.icon} size={18} color="#FFFFFF" />
+              </LinearGradient>
+
+              {/* Right Side: Perfectly vertical-aligned stacked text column */}
+              <View style={styles.techContent}>
+                <Text style={[styles.techTitle, { color: theme.textPrimary }]}>{item.title}</Text>
+                <Text style={[styles.techBody, { color: theme.textSecondary }]}>{item.body}</Text>
+              </View>
+            </LinearGradient>
+          ))}
+        </View>
+
+        <SectionHeader eyebrow="04 / COMMUNITY" title="Grounded in trust, built by innovators" theme={theme} />
+        <View style={styles.testimonialWrap}>
+          {TESTIMONIALS.map(item => (
+            <LinearGradient
+              key={item.name}
+              colors={isDark ? item.gradientDark : item.gradientLight}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.testimonialCard,
+                {
+                  borderColor: isDark ? item.borderColorDark : item.borderColorLight,
+                  shadowColor: item.color,
+                  shadowOpacity: isDark ? 0.06 : 0.04,
+                  shadowRadius: 14,
+                  shadowOffset: { width: 0, height: 5 },
+                  elevation: isDark ? 0 : 2,
+                  backgroundColor: isDark ? '#141A16' : '#FFFFFF',
+                }
+              ]}
+            >
+              {/* Background double-quote watermark */}
+              <MaterialCommunityIcons
+                name="format-quote-close"
+                size={76}
+                color={item.color}
+                style={[styles.testimonialWatermark, { opacity: isDark ? 0.06 : 0.09 }]}
+              />
+
+              <View style={styles.testimonialHeader}>
+                {/* Left: Avatar circle with initials */}
+                <View style={[styles.testimonialAvatarShell, { backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : '#FFFFFF', borderColor: `${item.color}25` }]}>
+                  <LinearGradient
+                    colors={isDark ? [`${item.color}35`, 'transparent'] : [`${item.color}15`, `${item.color}05`]}
+                    style={styles.avatarGradient}
+                  >
+                    <Text style={[styles.avatarInitials, { color: item.color }]}>{item.initials}</Text>
+                  </LinearGradient>
+                </View>
+
+                {/* Middle: Identity Meta Info */}
+                <View style={styles.testimonialMeta}>
+                  <View style={styles.nameVerifiedRow}>
+                    <Text style={[styles.testimonialName, { color: theme.textPrimary }]}>{item.name}</Text>
+                    <Ionicons name="checkmark-circle" size={12} color="#10B981" style={styles.verifiedIcon} />
+                  </View>
+                  <View style={styles.subtitleRow}>
+                    <Ionicons name="location" size={10} color={item.color} style={{ marginRight: 2 }} />
+                    <Text style={[styles.testimonialSubtitle, { color: theme.textSecondary }]}>{item.subtitle}</Text>
+                  </View>
+                </View>
+
+                {/* Right: Star ratings compact */}
+                <View style={styles.starsContainer}>
+                  <View style={styles.starsRow}>
+                    {[1, 2, 3, 4, 5].map(star => (
+                      <Ionicons key={star} name="star" size={11} color="#FBBF24" />
+                    ))}
+                  </View>
+                  <Text style={[styles.verifiedText, { color: theme.textMuted }]}>Verified Soil Scan</Text>
+                </View>
+              </View>
+
+              {/* Bottom: Farmer Review Text with nested stylized quotes */}
+              <Text style={[styles.testimonialText, { color: theme.textSecondary }]}>
+                <Text style={[styles.stylizedQuote, { color: item.color }]}>“</Text>
+                {item.review}
+                <Text style={[styles.stylizedQuote, { color: item.color }]}>”</Text>
+              </Text>
+            </LinearGradient>
+          ))}
+        </View>
+
+        <View style={styles.buildersDivider}>
+          <View style={[styles.subDividerLine, { backgroundColor: theme.sep2 }]} />
+          <Text style={[styles.buildersSubheading, { color: theme.textSecondary }]}>Meet the Builders</Text>
+        </View>
+
         <View style={styles.teamWrap}>
           {TEAM_ITEMS.map(member => (
             <TouchableOpacity key={member.name} activeOpacity={0.86} style={[styles.teamCardShadow, { shadowColor: member.accent }]}>
+              {/* Outer Border Gradient Container */}
               <LinearGradient
-                colors={isDark ? [member.gradient[0], 'rgba(24,33,27,0.92)', 'rgba(16,22,17,0.98)'] : [member.gradient[0], 'rgba(248,250,252,0.86)', 'rgba(236,253,245,0.72)']}
+                colors={isDark ? member.borderDark : member.borderLight}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={[styles.teamCard, { borderColor: isDark ? `${member.accent}30` : `${member.accent}22` }]}
+                style={styles.teamCardBorder}
               >
-                <View style={[styles.teamLight, styles.teamLightTop, { backgroundColor: `${member.accent}${isDark ? '20' : '18'}` }]} />
-                <View style={[styles.teamLight, styles.teamLightBottom, { backgroundColor: `${member.accent}${isDark ? '10' : '12'}` }]} />
-                <View style={[styles.avatarGlow, { borderColor: `${member.accent}66`, backgroundColor: `${member.accent}${isDark ? '12' : '0E'}` }]}>
-                  <Image source={member.image} style={styles.teamAvatar} resizeMode="cover" />
-                </View>
-                <Text style={[styles.teamName, { color: theme.textPrimary }]}>{member.name}</Text>
-                <View style={[styles.roleBadge, { backgroundColor: isDark ? `${member.accent}20` : `${member.accent}14`, borderColor: `${member.accent}${isDark ? '35' : '26'}` }]}>
-                  <Text style={[styles.roleText, { color: member.accent }]}>{member.role}</Text>
-                </View>
-                <View style={[styles.collegeBadge, { backgroundColor: isDark ? 'rgba(255,255,255,0.045)' : 'rgba(255,255,255,0.32)', borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.42)' }]}>
-                  <Ionicons name="school-outline" size={13} color={member.accent} />
-                  <Text style={[styles.collegeText, { color: theme.textSecondary }]}>{member.college}</Text>
-                </View>
+                {/* Inner Card Gradient Content */}
+                <LinearGradient
+                  colors={isDark ? member.gradientDark : member.gradientLight}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.teamCardInner}
+                >
+                  {/* Modern ambient radial glow behind the avatar */}
+                  <View style={[styles.avatarGlowBg, { backgroundColor: member.accent }]} />
+                  
+                  {/* Floating transparent avatar */}
+                  <Image source={member.image} style={styles.teamAvatar} resizeMode="contain" />
+                  
+                  <Text style={[styles.teamName, { color: theme.textPrimary }]}>{member.name}</Text>
+                  
+                  <View style={[
+                    styles.roleBadge, 
+                    { 
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)', 
+                      borderColor: isDark ? `${member.accent}33` : `${member.accent}26`,
+                      borderWidth: 1
+                    }
+                  ]}>
+                    <Text style={[styles.roleText, { color: isDark ? member.accent : theme.primary }]}>{member.role}</Text>
+                  </View>
+                  
+                  <View style={[
+                    styles.collegeBadge, 
+                    { 
+                      backgroundColor: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(255,255,255,0.45)', 
+                      borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.25)',
+                      borderWidth: 1
+                    }
+                  ]}>
+                    <Ionicons name="school-outline" size={13} color={member.accent} />
+                    <Text style={[styles.collegeText, { color: theme.textSecondary }]}>{member.college}</Text>
+                  </View>
+                </LinearGradient>
               </LinearGradient>
             </TouchableOpacity>
           ))}
         </View>
 
-        <SectionHeader eyebrow="TRUST" title="What Farmers Say" theme={theme} />
-        <View style={styles.testimonialWrap}>
-          {TESTIMONIALS.map(item => (
-            <View key={item.name} style={[styles.testimonialCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-              <View style={styles.testimonialTop}>
-                <View style={[styles.testimonialAvatar, { backgroundColor: `${item.color}${isDark ? '22' : '18'}` }]}>
-                  <Ionicons name={item.icon} size={23} color={item.color} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.testimonialName, { color: theme.textPrimary }]}>{item.name}</Text>
-                  <Text style={[styles.testimonialSubtitle, { color: theme.textSecondary }]}>{item.subtitle}</Text>
-                </View>
-              </View>
-              <View style={[styles.quoteMark, { backgroundColor: `${item.color}${isDark ? '18' : '10'}` }]}>
-                <Ionicons name="chatbox-ellipses-outline" size={16} color={item.color} />
-              </View>
-              <Text style={[styles.testimonialText, { color: theme.textSecondary }]}>{`"${item.review}"`}</Text>
-              <View style={styles.starsRow}>
-                {[1, 2, 3, 4, 5].map(star => (
-                  <Ionicons key={star} name="star" size={16} color="#FBBF24" />
-                ))}
-              </View>
-            </View>
-          ))}
-        </View>
-
-        <SectionHeader eyebrow="TECHNOLOGY" title="Modern stack, grounded in agriculture" theme={theme} />
-        <View style={styles.techGrid}>
-          {TECH_ITEMS.map(item => (
-            <View key={item.title} style={[styles.techCard, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.cardBorder }]}>
-              <Ionicons name={item.icon} size={22} color={item.color} />
-              <Text style={[styles.techTitle, { color: theme.textPrimary }]}>{item.title}</Text>
-              <Text style={[styles.techBody, { color: theme.textSecondary }]}>{item.body}</Text>
-            </View>
-          ))}
-        </View>
-
-        <SectionHeader eyebrow="CONNECT" title="Talk to the Saathi AI team" theme={theme} />
+        <SectionHeader eyebrow="05 / CONNECT" title="Talk to the Saathi AI team" theme={theme} />
         <View style={[styles.contactCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <ContactRow icon="location-outline" color={theme.blue} text="FMU-TBI, Balasore, Odisha, India" theme={theme} />
           <TouchableOpacity onPress={() => Linking.openURL('tel:+917205095602')} activeOpacity={0.75}>
@@ -375,14 +707,14 @@ export default function AboutScreen() {
 
           <TextInput
             style={[styles.input, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder="Your name"
+            placeholder={t('enterName')}
             placeholderTextColor={theme.textMuted}
             value={fullName}
             onChangeText={setFullName}
           />
           <TextInput
             style={[styles.input, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder="Email address"
+            placeholder={t('enterEmail')}
             placeholderTextColor={theme.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -391,7 +723,7 @@ export default function AboutScreen() {
           />
           <TextInput
             style={[styles.textarea, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder="Tell us about your farming needs"
+            placeholder={t('enterMessage')}
             placeholderTextColor={theme.textMuted}
             multiline
             textAlignVertical="top"
@@ -399,7 +731,14 @@ export default function AboutScreen() {
             onChangeText={setMessage}
           />
           <TouchableOpacity style={[styles.sendButton, { backgroundColor: theme.primary }]} onPress={handleSend} disabled={sending} activeOpacity={0.85}>
-            {sending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.sendButtonText}>Send Message</Text>}
+            {sending ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={styles.sendButtonText}>{t('sending')}</Text>
+              </View>
+            ) : (
+              <Text style={styles.sendButtonText}>{t('sendButton')}</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -498,9 +837,27 @@ const styles = StyleSheet.create({
   heroMini: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 8 },
   heroMiniText: { fontFamily: 'Sora_600SemiBold', fontSize: 11 },
 
-  sectionHeader: { paddingHorizontal: 18, paddingTop: 16, paddingBottom: 10 },
-  eyebrow: { fontFamily: 'Sora_800ExtraBold', fontSize: 10, letterSpacing: 1.2 },
+  sectionHeader: { paddingHorizontal: 18, paddingTop: 32, paddingBottom: 12 },
+  eyebrow: { fontFamily: 'Sora_800ExtraBold', fontSize: 10.5, letterSpacing: 2.0, textTransform: 'uppercase' },
   sectionTitle: { fontFamily: 'Sora_800ExtraBold', fontSize: 22, lineHeight: 29, marginTop: 5 },
+  sectionGap: { height: 28 },
+  buildersDivider: {
+    alignItems: 'center',
+    marginTop: 36,
+    marginBottom: 20,
+  },
+  subDividerLine: {
+    width: '80%',
+    height: 1,
+    marginBottom: 16,
+    opacity: 0.2,
+  },
+  buildersSubheading: {
+    fontFamily: 'Sora_800ExtraBold',
+    fontSize: 14,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
 
   missionCard: {
     marginHorizontal: 16,
@@ -568,94 +925,226 @@ const styles = StyleSheet.create({
   farmerTitle: { fontFamily: 'Sora_800ExtraBold', fontSize: 18, lineHeight: 25 },
   farmerBody: { fontFamily: 'Sora_400Regular', fontSize: 14, lineHeight: 22, marginTop: 9 },
 
-  teamWrap: { paddingHorizontal: 16, gap: 14 },
+  teamWrap: { paddingHorizontal: 16, gap: 16 },
   teamCardShadow: {
     borderRadius: 28,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.16,
-    shadowRadius: 22,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.14,
+    shadowRadius: 24,
+    elevation: 6,
   },
-  teamCard: {
+  teamCardBorder: {
     borderRadius: 28,
-    borderWidth: 1,
-    padding: 20,
+    padding: 1.6,
+  },
+  teamCardInner: {
+    borderRadius: 26.5,
+    padding: 16,
     alignItems: 'center',
     overflow: 'hidden',
+    position: 'relative',
   },
-  avatarGlow: {
-    width: 112,
-    height: 112,
-    borderRadius: 56,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 4,
+  avatarGlowBg: {
+    position: 'absolute',
+    top: 26,
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    opacity: 0.12,
+    zIndex: 1,
+    alignSelf: 'center',
   },
-  teamAvatar: { width: 92, height: 92, borderRadius: 46 },
-  teamName: { fontFamily: 'Sora_800ExtraBold', fontSize: 21, textAlign: 'center' },
+  teamAvatar: { 
+    width: 110, 
+    height: 110, 
+    marginBottom: 8,
+    zIndex: 2,
+  },
+  teamName: { 
+    fontFamily: 'Sora_800ExtraBold', 
+    fontSize: 18, 
+    textAlign: 'center',
+    letterSpacing: 0.3,
+    zIndex: 2,
+  },
   roleBadge: {
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4.5,
+    marginTop: 5,
     maxWidth: '94%',
+    zIndex: 2,
   },
-  roleText: { fontFamily: 'Sora_800ExtraBold', fontSize: 12, lineHeight: 18, textAlign: 'center' },
+  roleText: { 
+    fontFamily: 'Sora_800ExtraBold', 
+    fontSize: 11, 
+    lineHeight: 16, 
+    textAlign: 'center',
+    letterSpacing: 0.2,
+  },
   collegeBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    marginTop: 5,
+    zIndex: 2,
   },
-  collegeText: { fontFamily: 'Sora_500Medium', fontSize: 11, textAlign: 'center', flexShrink: 1 },
+  collegeText: { 
+    fontFamily: 'Sora_600SemiBold', 
+    fontSize: 9.5, 
+    textAlign: 'center', 
+    flexShrink: 1 
+  },
 
-  testimonialWrap: { paddingHorizontal: 16, gap: 12 },
+  testimonialWrap: { paddingHorizontal: 16, gap: 10 },
   testimonialCard: {
     borderWidth: 1,
-    borderRadius: 24,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.07,
-    shadowRadius: 14,
-    elevation: 3,
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    position: 'relative',
+    overflow: 'hidden',
+    shadowColor: '#1B3B2B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.04,
+    shadowRadius: 12,
+    marginBottom: 2,
   },
-  testimonialTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  testimonialAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  testimonialHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
+    zIndex: 2,
+  },
+  testimonialAvatarShell: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitials: {
+    fontFamily: 'Sora_800ExtraBold',
+    fontSize: 12.5,
+    letterSpacing: -0.2,
+  },
+  testimonialMeta: {
+    flex: 1,
+    marginLeft: 10,
     justifyContent: 'center',
   },
-  testimonialName: { fontFamily: 'Sora_800ExtraBold', fontSize: 16 },
-  testimonialSubtitle: { fontFamily: 'Sora_400Regular', fontSize: 12, marginTop: 3 },
-  quoteMark: {
-    width: 34,
-    height: 34,
+  nameVerifiedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  verifiedIcon: {
+    marginTop: -1,
+  },
+  subtitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 0.5,
+  },
+  testimonialName: {
+    fontFamily: 'Sora_800ExtraBold',
+    fontSize: 13.5,
+    letterSpacing: 0.1,
+  },
+  testimonialSubtitle: {
+    fontFamily: 'Sora_500Medium',
+    fontSize: 10.5,
+    lineHeight: 14,
+  },
+  starsContainer: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+  },
+  starsRow: {
+    flexDirection: 'row',
+    gap: 1.5,
+    alignItems: 'center',
+  },
+  verifiedText: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 8.5,
+    marginTop: 2,
+    letterSpacing: 0.1,
+  },
+  testimonialText: {
+    fontFamily: 'Sora_500Medium',
+    fontSize: 12.5,
+    lineHeight: 18.5,
+    fontStyle: 'italic',
+    zIndex: 2,
+    paddingLeft: 2,
+    letterSpacing: -0.1,
+  },
+  stylizedQuote: {
+    fontFamily: 'Sora_800ExtraBold',
+    fontSize: 16,
+    lineHeight: 16,
+  },
+  testimonialWatermark: {
+    position: 'absolute',
+    right: -10,
+    bottom: -16,
+    zIndex: 1,
+  },
+
+  techGrid: { paddingHorizontal: 16, gap: 10 },
+  techCard: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 14, 
+    borderWidth: 1, 
+    borderRadius: 20, 
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    marginBottom: 2,
+  },
+  techIconCapsule: {
+    width: 42,
+    height: 42,
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 16,
-    marginBottom: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 1,
   },
-  testimonialText: { fontFamily: 'Sora_400Regular', fontSize: 14, lineHeight: 22, fontStyle: 'italic' },
-  starsRow: { flexDirection: 'row', gap: 3, marginTop: 13 },
-
-  techGrid: { paddingHorizontal: 16, gap: 10 },
-  techCard: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, borderWidth: 1, borderRadius: 20, padding: 14 },
-  techTitle: { fontFamily: 'Sora_800ExtraBold', fontSize: 14 },
-  techBody: { fontFamily: 'Sora_400Regular', fontSize: 12, lineHeight: 18, marginTop: 4, flexShrink: 1 },
+  techContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  techTitle: { 
+    fontFamily: 'Sora_800ExtraBold', 
+    fontSize: 14,
+    letterSpacing: 0.1,
+  },
+  techBody: { 
+    fontFamily: 'Sora_500Medium', 
+    fontSize: 11.5, 
+    lineHeight: 17, 
+    marginTop: 2.5,
+  },
 
   contactCard: { marginHorizontal: 16, borderWidth: 1, borderRadius: 24, padding: 16 },
   contactRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },

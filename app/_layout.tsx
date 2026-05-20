@@ -21,6 +21,7 @@ import { Provider as PaperProvider } from 'react-native-paper';
 import { SoilMarkersProvider } from '@/context/SoilMarkersContext';
 import { LiveDataProvider } from '@/features/ble/LiveDataContext';
 import { ThemeProvider } from '@/context/ThemeContext';
+import { LanguageProvider } from '@/context/LanguageContext';
 import { useAuthStore } from '@/store/authStore';
 import { registerDevice } from '@/features/auth/services/auth';
 
@@ -41,6 +42,9 @@ export default function RootLayout() {
     Sora_700Bold,
     Sora_800ExtraBold,
     Pacifico_400Regular,
+    'TrainexDemo': require('../assets/fonts/TrainexDemo-V4rEB.otf'),
+    'RuntimeRegular': require('../assets/fonts/RuntimeRegular-m2Odx.otf'),
+    'MythicalDragon': require('../assets/fonts/MythicalDragonAllCapsPoster-E4dzr.otf'),
   });
 
   useEffect(() => {
@@ -75,22 +79,24 @@ export default function RootLayout() {
 
   return (
     <ErrorBoundary>
-      <ThemeProvider>
-        <PaperProvider>
-          <SoilMarkersProvider>
-            <LiveDataProvider>
-              <GestureHandlerRootView style={{ flex: 1 }}>
-                <Stack screenOptions={{ headerShown: false }}>
-                  <Stack.Screen name="index" options={{ headerShown: false }} />
-                  <Stack.Screen name="(onboarding)" options={{ animation: 'fade' }} />
-                  <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
-                  <Stack.Screen name="(app)" options={{ animation: 'fade' }} />
-                </Stack>
-              </GestureHandlerRootView>
-            </LiveDataProvider>
-          </SoilMarkersProvider>
-        </PaperProvider>
-      </ThemeProvider>
+      <LanguageProvider>
+        <ThemeProvider>
+          <PaperProvider>
+            <SoilMarkersProvider>
+              <LiveDataProvider>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                  <Stack screenOptions={{ headerShown: false }}>
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
+                    <Stack.Screen name="(onboarding)" options={{ animation: 'fade' }} />
+                    <Stack.Screen name="(auth)" options={{ animation: 'fade' }} />
+                    <Stack.Screen name="(app)" options={{ animation: 'fade' }} />
+                  </Stack>
+                </GestureHandlerRootView>
+              </LiveDataProvider>
+            </SoilMarkersProvider>
+          </PaperProvider>
+        </ThemeProvider>
+      </LanguageProvider>
     </ErrorBoundary>
   );
 }

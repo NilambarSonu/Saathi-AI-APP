@@ -8,6 +8,7 @@ import {
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
 import { useDarkModeTheme } from '@/context/ThemeContext';
+import { useTranslation } from '@/context/LanguageContext';
 import {
   sendOtp,
   verifyOtp,
@@ -40,6 +41,7 @@ export default function ForgotPasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [step, setStep] = useState<Step>('email');
   const [isLoading, setIsLoading] = useState(false);
+  const { t } = useTranslation();
 
   // ── Step 1: Send login OTP to email ──────────────────────────────
   async function handleSendOtp() {
@@ -137,13 +139,13 @@ export default function ForgotPasswordScreen() {
 
   // Dynamic hero copy
   const heroTitle =
-    step === 'email' ? 'Forgot Password?' :
-    step === 'verify' ? 'Verify Your Email' :
+    step === 'email' ? t('auth.forgot.title') :
+    step === 'verify' ? t('auth.verify.title') :
     'Set New Password';
 
   const heroSub =
-    step === 'email' ? "No worries! We'll send a code to your email." :
-    step === 'verify' ? 'Enter the 6-digit code sent to your email.' :
+    step === 'email' ? t('auth.forgot.subtitle') :
+    step === 'verify' ? t('auth.verify.subtitle') :
     'Enter the security code & choose a strong password.';
 
   return (
@@ -183,7 +185,7 @@ export default function ForgotPasswordScreen() {
           {/* ── Step 1: Email ── */}
           {step === 'email' && (
             <>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>EMAIL ADDRESS</Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.forgot.emailOrPhone').toUpperCase()}</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
                 value={email}
@@ -202,7 +204,7 @@ export default function ForgotPasswordScreen() {
               >
                 {isLoading
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.btnPrimaryText}>Send OTP →</Text>}
+                  : <Text style={styles.btnPrimaryText}>{t('auth.forgot.sendBtn')} →</Text>}
               </TouchableOpacity>
             </>
           )}
@@ -213,12 +215,12 @@ export default function ForgotPasswordScreen() {
               <Text style={[styles.infoText, { color: theme.textSecondary }]}>
                 Enter the 6-digit code sent to <Text style={[styles.emailHighlight, { color: theme.textPrimary }]}>{email}</Text>
               </Text>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>VERIFICATION CODE</Text>
+              <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.verify.title').toUpperCase()}</Text>
               <TextInput
                 style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
                 value={otp}
                 onChangeText={setOtp}
-                placeholder="Enter 6-digit code"
+                placeholder={t('auth.verify.otpPlaceholder')}
                 placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
                 keyboardType="number-pad"
                 maxLength={6}
@@ -231,7 +233,7 @@ export default function ForgotPasswordScreen() {
               >
                 {isLoading
                   ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.btnPrimaryText}>Verify OTP →</Text>}
+                  : <Text style={styles.btnPrimaryText}>{t('auth.verify.verifyBtn')} →</Text>}
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setStep('email')} style={styles.backLink}>
                 <Text style={[styles.backLinkText, { color: theme.primary }]}>← Change Email</Text>
@@ -292,14 +294,12 @@ export default function ForgotPasswordScreen() {
             </>
           )}
 
-          {/* Back to login link — always shown */}
           <TouchableOpacity
             onPress={() => router.replace('/(auth)/login')}
             style={styles.loginLink}
           >
-            <Text style={[styles.loginLinkText, { color: theme.textSecondary }]}>
-              Remember your password?{' '}
-              <Text style={{ color: theme.primary }}>Log in</Text>
+            <Text style={[styles.loginLinkText, { color: theme.primary }]}>
+              {t('auth.forgot.backToLogin')}
             </Text>
           </TouchableOpacity>
         </View>

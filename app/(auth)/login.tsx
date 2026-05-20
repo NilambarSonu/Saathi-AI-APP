@@ -20,6 +20,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { FontAwesome } from '@expo/vector-icons';
 import { useDarkModeTheme } from '@/context/ThemeContext';
+import { useTranslation } from '@/context/LanguageContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthStore } from '@/store/authStore';
 
@@ -31,6 +32,7 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [socialLoading, setSocialLoading] = useState<null | 'google' | 'facebook' | 'x'>(null);
   const { login, setSession } = useAuthStore();
+  const { t } = useTranslation();
 
   // Floating animation for the hero badge
   const badgeFloat = useSharedValue(0);
@@ -68,9 +70,9 @@ export default function LoginScreen() {
           ? 'Server returned an invalid login response. Please try again in a minute.'
           : rawMessage === 'NETWORK_REQUEST_FAILED'
             ? 'Network request failed. Please check internet and backend server status.'
-            : rawMessage || 'Invalid credentials. Please try again.';
+            : rawMessage || t('auth.login.validationError');
 
-      Alert.alert('Login Failed', message);
+      Alert.alert(t('auth.login.errorTitle'), message);
     } finally {
       setIsLoading(false);
     }
@@ -119,11 +121,10 @@ export default function LoginScreen() {
               <Text style={styles.heroBadgeText}>🌱</Text>
             </Animated.View>
             <Animated.Text style={styles.heroTitle} entering={FadeInDown.delay(300).springify()}>
-              Welcome Back,{'\n'}
-              <Text style={styles.heroAccent}>Farmer's!</Text>
+              {t('auth.login.title')}
             </Animated.Text>
             <Animated.Text style={styles.heroSub} entering={FadeInDown.delay(400).springify()}>
-              Login to access your soil insights and AI recommendations
+              {t('auth.login.subtitle')}
             </Animated.Text>
           </View>
         </ImageBackground>
@@ -151,14 +152,14 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           {/* Form */}
-          <Text style={[styles.label, { color: theme.textSecondary }]}>USERNAME OR EMAIL</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.login.usernameOrEmail').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="user" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
               value={usernameOrEmail}
               onChangeText={setUsernameOrEmail}
-              placeholder="farmer123 or you@gmail.com"
+              placeholder={t('auth.login.usernameOrEmail')}
               placeholderTextColor={theme.textMuted}
               autoCapitalize="none"
               keyboardType="email-address"
@@ -166,14 +167,14 @@ export default function LoginScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>PASSWORD</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.login.password').toUpperCase()}</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="lock" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
               style={[styles.input, { flex: 1, color: theme.textPrimary }]}
               value={password}
               onChangeText={setPassword}
-              placeholder="Enter your password"
+              placeholder={t('auth.login.password')}
               placeholderTextColor={theme.textMuted}
               secureTextEntry={!showPassword}
               autoComplete="password"
@@ -187,7 +188,7 @@ export default function LoginScreen() {
           </View>
 
           <TouchableOpacity onPress={() => router.push('/(auth)/forgot-password')} style={styles.forgotLink}>
-            <Text style={[styles.forgotText, { color: theme.primary }]}>Forgot Password?</Text>
+            <Text style={[styles.forgotText, { color: theme.primary }]}>{t('auth.login.forgotPassword')}</Text>
           </TouchableOpacity>
 
           {/* Primary button */}
@@ -206,7 +207,7 @@ export default function LoginScreen() {
               {isLoading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.btnPrimaryText}>🌱 Login to Saathi AI →</Text>
+                <Text style={styles.btnPrimaryText}>🌱 {t('auth.login.loginBtn')} →</Text>
               )}
             </LinearGradient>
           </TouchableOpacity>
@@ -214,7 +215,7 @@ export default function LoginScreen() {
           {/* Divider */}
           <View style={styles.divider}>
             <View style={[styles.dividerLine, { backgroundColor: theme.sep1 }]} />
-            <Text style={[styles.dividerText, { color: theme.textMuted }]}>OR CONTINUE WITH</Text>
+            <Text style={[styles.dividerText, { color: theme.textMuted }]}>{t('auth.login.socialAuthTitle').toUpperCase()}</Text>
             <View style={[styles.dividerLine, { backgroundColor: theme.sep1 }]} />
           </View>
 

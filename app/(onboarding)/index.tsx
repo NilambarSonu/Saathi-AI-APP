@@ -3,47 +3,47 @@ import { View, Text, StyleSheet, Pressable, Dimensions, ScrollView, NativeScroll
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useDarkModeTheme } from '@/context/ThemeContext';
+import { useTranslation } from '@/context/LanguageContext';
 import { Spacing } from '@/constants/Spacing';
 
 const { width } = Dimensions.get('window');
 
-const getSLIDES = (theme: any) => [
-  {
-    id: '1',
-    title: 'Soil Testing in ',
-    highlight: '60 Seconds',
-    body: 'The Agni device analyzes 14 parameters — pH, N, P, K, moisture, EC and more. No lab. No waiting.',
-    badge: '60 SECS',
-    bg: theme.fillGreen,
-    iconColor: theme.primary
-  },
-  {
-    id: '2',
-    title: 'Your Farm, ',
-    highlight: 'Your Language',
-    body: 'Get recommendations in Odia, Hindi, English or 7 other Indian languages — with full voice advisory support.',
-    badge: '10 LANGS',
-    bg: theme.fillAmber,
-    iconColor: theme.amber
-  },
-  {
-    id: '3',
-    title: 'AI That Knows ',
-    highlight: 'Agriculture',
-    body: 'Saathi AI is trained on peer-reviewed agronomic data to deliver personalized fertilizer plans and yield forecasts.',
-    badge: 'CUSTOM LLM',
-    bg: theme.fillPurple,
-    iconColor: theme.purple
-  }
-];
-
 export default function OnboardingScreen() {
   const router = useRouter();
   const { theme, isDark } = useDarkModeTheme();
+  const { t } = useTranslation();
   const [currentIndex, setCurrentIndex] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const SLIDES = getSLIDES(theme);
+  const SLIDES = [
+    {
+      id: '1',
+      title: t('onboarding.slides.0.title'),
+      highlight: t('onboarding.slides.0.highlight'),
+      body: t('onboarding.slides.0.body'),
+      badge: t('onboarding.slides.0.badge'),
+      bg: theme.fillGreen,
+      iconColor: theme.primary
+    },
+    {
+      id: '2',
+      title: t('onboarding.slides.1.title'),
+      highlight: t('onboarding.slides.1.highlight'),
+      body: t('onboarding.slides.1.body'),
+      badge: t('onboarding.slides.1.badge'),
+      bg: theme.fillAmber,
+      iconColor: theme.amber
+    },
+    {
+      id: '3',
+      title: t('onboarding.slides.2.title'),
+      highlight: t('onboarding.slides.2.highlight'),
+      body: t('onboarding.slides.2.body'),
+      badge: t('onboarding.slides.2.badge'),
+      bg: theme.fillPurple,
+      iconColor: theme.purple
+    }
+  ];
 
   const completeOnboarding = async () => {
     await AsyncStorage.multiSet([
@@ -75,7 +75,7 @@ export default function OnboardingScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Pressable style={styles.skipButton} onPress={completeOnboarding}>
-        <Text style={[styles.skipText, { color: theme.textSecondary }]}>Skip</Text>
+        <Text style={[styles.skipText, { color: theme.textSecondary }]}>{t('common.skip')}</Text>
       </Pressable>
 
       <ScrollView
@@ -129,7 +129,7 @@ export default function OnboardingScreen() {
           onPress={handleContinue}
         >
           <Text style={[styles.ctaText, { color: '#FFFFFF' }]}>
-            {currentIndex === SLIDES.length - 1 ? 'Get Started' : 'Continue'}
+            {currentIndex === SLIDES.length - 1 ? t('common.getStarted') : t('common.continue')}
           </Text>
         </Pressable>
       </View>

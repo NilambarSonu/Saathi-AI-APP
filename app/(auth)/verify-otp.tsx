@@ -8,6 +8,7 @@ import { verifyOTP, resendOTP } from '@/features/auth/services/auth';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/Colors';
 import { useTheme } from '@/context/ThemeContext';
+import { useTranslation } from '@/context/LanguageContext';
 
 const OTP_LENGTH = 6;
 
@@ -15,6 +16,7 @@ export default function VerifyOTPScreen() {
   const { theme } = useTheme();
   const { email } = useLocalSearchParams<{ email: string }>();
   const { setSession } = useAuthStore();
+  const { t } = useTranslation();
   const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [isLoading, setIsLoading] = useState(false);
   const [countdown, setCountdown] = useState(60);
@@ -61,11 +63,11 @@ export default function VerifyOTPScreen() {
         await setSession(response.user, response.token, response.refreshToken ?? null);
         router.replace('/(app)');
       } else {
-        Alert.alert('Verification Failed', 'Could not verify email. Please try again.');
+        Alert.alert(t('auth.verify.errorTitle'), 'Could not verify email. Please try again.');
       }
     } catch (err: any) {
       const serverMessage = err.response?.data?.error || err.message || 'The code is incorrect or expired.';
-      Alert.alert('Verification Failed', serverMessage);
+      Alert.alert(t('auth.verify.errorTitle'), serverMessage);
       setOtp(Array(OTP_LENGTH).fill(''));
       inputRefs.current[0]?.focus();
     } finally {
@@ -89,7 +91,7 @@ export default function VerifyOTPScreen() {
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <TouchableOpacity style={styles.back} onPress={() => router.back()}>
-        <Text style={[styles.backText, { color: theme.textSecondary }]}>← Back</Text>
+        <Text style={[styles.backText, { color: theme.textSecondary }]}>← {t('common.goBack')}</Text>
       </TouchableOpacity>
 
       <View style={styles.content}>
@@ -97,11 +99,11 @@ export default function VerifyOTPScreen() {
           <Text style={{ fontSize: 32 }}>📧</Text>
         </View>
 
-        <Text style={[styles.title, { color: theme.textPrimary }]}>Verify Your Email</Text>
+        <Text style={[styles.title, { color: theme.textPrimary }]}>{t('auth.verify.title')}</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
-          We sent a 6-digit code to{'\n'}
+          {t('auth.verify.subtitle')}
+          {'\n'}
           <Text style={[styles.emailHighlight, { color: theme.textPrimary }]}>{maskedEmail}</Text>
-          {'\n'}Enter it below to continue.
         </Text>
 
         {/* OTP boxes */}
@@ -133,10 +135,10 @@ export default function VerifyOTPScreen() {
         <Text style={[styles.timer, { color: theme.textSecondary }]}>
           {canResend ? (
             <Text style={[styles.resendLink, { color: theme.primary }]} onPress={handleResend}>
-              Resend OTP
+              {t('auth.verify.resendCode')}
             </Text>
           ) : (
-            <>Resend in <Text style={[styles.timerHighlight, { color: theme.primary }]}>{countdown}s</Text></>
+            <>{t('auth.verify.timerText', { seconds: countdown.toString() })}</>
           )}
         </Text>
 
@@ -149,7 +151,7 @@ export default function VerifyOTPScreen() {
         >
           {isLoading
             ? <ActivityIndicator color="#fff" />
-            : <Text style={styles.btnText}>✓ Verify & Continue</Text>
+            : <Text style={styles.btnText}>✓ {t('auth.verify.verifyBtn')}</Text>
           }
         </TouchableOpacity>
       </View>
