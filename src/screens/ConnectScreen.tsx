@@ -33,7 +33,7 @@ import { agniBluetoothManager } from '@/features/ble/AgniBluetoothManager';
 import type { State as BleState } from 'react-native-ble-plx';
 import { ReceivedFile } from '@/features/ble/types';
 import { useDarkModeTheme } from '@/context/ThemeContext';
-import { useTranslation } from '@/context/LanguageContext';
+
 
 const { width } = Dimensions.get('window');
 type TabKey = 'soil' | 'guide';
@@ -151,40 +151,17 @@ function StatusBadge({ status, bluetoothState }: StatusBadgeProps) {
 }
 
 type TabSwitcherProps = {
-  const visual = useMemo(() => getStatusVisual(status, bluetoothState, isDark), [status, bluetoothState, isDark]);
-
-  return (
-    <Animated.View
-      entering={FadeIn.duration(180)}
-      style={[s.statusBadge, { backgroundColor: visual.backgroundColor }]}
-    >
-      <View style={[s.statusDot, { backgroundColor: visual.dotColor }]} />
-      <Text
-        style={[
-          s.statusBadgeText,
-          { color: visual.textColor },
-          visual.emphasized && s.statusBadgeStrong,
-        ]}
-      >
-        {visual.label}
-      </Text>
-    </Animated.View>
-  );
-}
-
-type TabSwitcherProps = {
   activeTab: TabKey;
   onChange: (tab: TabKey) => void;
 };
 
 function TabSwitcher({ activeTab, onChange }: TabSwitcherProps) {
   const { theme } = useDarkModeTheme();
-  const { t } = useTranslation();
   const [containerWidth, setContainerWidth] = useState(0);
   const x = useSharedValue(0);
   const tabs: Array<{ key: TabKey; label: string }> = [
-    { key: 'soil', label: t('connect.tabs.reports') },
-    { key: 'guide', label: t('connect.tabs.guide') },
+    { key: 'soil', label: 'Soil Reports' },
+    { key: 'guide', label: 'Quick Start' },
   ];
 
   useEffect(() => {
@@ -247,30 +224,25 @@ function TabSwitcher({ activeTab, onChange }: TabSwitcherProps) {
 
 function QuickStartView() {
   const { theme } = useDarkModeTheme();
-  const { t } = useTranslation();
-  
-  const steps = t('connect.quickStart.steps') || [];
-  const stepList = Array.isArray(steps) ? steps : [
-    '1. Switch on the Agni device power switch on the side.',
-    '2. Ensure your smartphone\'s Bluetooth and GPS location are turned on.',
-    '3. Push the Agni probe 4-6 inches down into moist soil (avoid dry or rocky soil).',
-    '4. Tap the \'Connect\' button on the dashboard or this screen.',
-    '5. Once connected, tap \'Run Instant Soil Test\' and wait 60 seconds.'
-  ];
-
   return (
     <View style={s.guideContent}>
       <View style={s.guideHeader}>
         <View style={[s.sparkleBox, { backgroundColor: theme.fillBlue }]}><Text style={s.sparkleIcon}>✨</Text></View>
-        <Text style={[s.guideHeaderText, { color: theme.textPrimary }]}>{t('connect.quickStart.title')}</Text>
+        <Text style={[s.guideHeaderText, { color: theme.textPrimary }]}>Quick Start Guide</Text>
       </View>
       <View style={s.stepList}>
-        {stepList.map((stepText: string, idx: number) => (
-          <View key={idx} style={s.stepItem}>
+        {[
+          { id: 1, text: 'Ensure Bluetooth is ON and location permission is granted.' },
+          { id: 2, text: 'Power on your Agni sensor — the LED should blink blue.' },
+          { id: 3, text: 'Tap "Scan for Agni Device" — the app auto-detects AGNI-SOIL-SENSOR.' },
+          { id: 4, text: 'Stay within 5 m. Soil files transfer automatically over BLE.' },
+          { id: 5, text: 'Switch to "Soil Reports" tab to see received files.' },
+        ].map(step => (
+          <View key={step.id} style={s.stepItem}>
             <View style={[s.stepBadge, { borderColor: theme.primary }]}>
-              <Text style={[s.stepBadgeText, { color: theme.primary }]}>{idx + 1}</Text>
+              <Text style={[s.stepBadgeText, { color: theme.primary }]}>{step.id}</Text>
             </View>
-            <Text style={[s.stepText, { color: theme.textSecondary }]}>{stepText.replace(/^\d+\.\s*/, '')}</Text>
+            <Text style={[s.stepText, { color: theme.textSecondary }]}>{step.text}</Text>
           </View>
         ))}
       </View>
@@ -281,7 +253,6 @@ function QuickStartView() {
 // ─── Screen ───────────────────────────────────────────────────────────────────
 export default function ConnectScreen() {
   const { theme, isDark } = useDarkModeTheme();
-  const { t } = useTranslation();
   const navigation = useNavigation<any>();
   const {
     status, bluetoothState, logs,
@@ -547,12 +518,6 @@ export default function ConnectScreen() {
 
   return (
     <SafeAreaView style={[s.screen, { backgroundColor: theme.background }]}>
-        {isDark && (
-          <LinearGradient
-            colors={[theme.bg0, theme.bg1, theme.background]}
-            style={StyleSheet.absoluteFill}
-          />
-        )}
         <ScrollView
           contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}

@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useState, useCallback, useRef, useTransition } from 'react';
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -38,6 +38,16 @@ import LottieView from 'lottie-react-native';
 import * as Haptics from 'expo-haptics';
 import { BlurView } from 'expo-blur';
 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSpring,
+  runOnJS,
+} from 'react-native-reanimated';
+import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
+
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MAP_SHEET_HEIGHT = Math.round(SCREEN_HEIGHT * 0.66);
 
@@ -69,6 +79,13 @@ const TIME_FILTERS = ['30 Days', '60 Days', '90 Days', '1 Year', 'All Time'] as 
 type ParameterName = (typeof PARAMETERS)[number];
 type TimeFilter = (typeof TIME_FILTERS)[number];
 
+type ProcessedSoilTest = SoilTest & {
+  parsedTime: number;
+  formattedDate: string;
+  formattedDateFull: string;
+  formattedTime: string;
+};
+
 // Helper to convert parameter name to SoilTest key
 const getParamKey = (param: ParameterName): keyof SoilTest => {
   switch (param) {
@@ -92,6 +109,260 @@ const getParamColor = (theme: any, param: ParameterName): string => {
   }
 };
 
+const safeParseDate = (dateStr: string | undefined | null): Date => {
+  if (!dateStr) return new Date();
+  const d = new Date(dateStr);
+  if (!isNaN(d.getTime())) return d;
+  const formatted = dateStr.replace(' ', 'T');
+  const d2 = new Date(formatted);
+  if (!isNaN(d2.getTime())) return d2;
+  return new Date();
+};
+
+const safeFormatDate = (dateStr: string | undefined | null, formatStr: string): string => {
+  try {
+    const parsed = safeParseDate(dateStr);
+    return format(parsed, formatStr);
+  } catch (e) {
+    console.warn('[History] Date formatting failed for:', dateStr, e);
+    return 'N/A';
+  }
+};
+
+const MemoizedMap = React.memo(({
+  mapRef,
+  mapStyle,
+  provider,
+  initialRegion,
+  mapType,
+  onMapReady,
+  showsUserLocation,
+  showsMyLocationButton,
+  scrollEnabled,
+  zoomEnabled,
+  zoomControlEnabled,
+  rotateEnabled,
+  pitchEnabled,
+  moveOnMarkerPress,
+  mapMode,
+  mapMarkers,
+  activeParameter,
+  theme,
+  isDark
+}: any) => {
+  return (
+    <MapView
+      ref={mapRef}
+      style={mapStyle}
+      provider={provider}
+      initialRegion={initialRegion}
+      mapType={mapType}
+      onMapReady={onMapReady}
+      showsUserLocation={showsUserLocation}
+      showsMyLocationButton={showsMyLocationButton}
+      scrollEnabled={scrollEnabled}
+      zoomEnabled={zoomEnabled}
+      zoomControlEnabled={zoomControlEnabled}
+      rotateEnabled={rotateEnabled}
+      pitchEnabled={pitchEnabled}
+      moveOnMarkerPress={moveOnMarkerPress}
+    >
+      {mapMode === 'osm' && (
+        <UrlTile
+          urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
+          maximumZ={19}
+          tileSize={256}
+          zIndex={1}
+        />
+      )}
+      {mapMarkers.map((marker: any) => (
+        <Marker
+          key={`${marker.id}-${activeParameter}`}
+          coordinate={marker.coordinate}
+          title={marker.title}
+          tracksViewChanges={false}
+        >
+          <View style={[styles.customMarker, { borderColor: getParamColor(theme, activeParameter), backgroundColor: isDark ? theme.surface : '#FFF' }]}>
+            <View style={[styles.markerDot, { backgroundColor: getParamColor(theme, activeParameter) }]} />
+          </View>
+        </Marker>
+      ))}
+    </MapView>
+  );
+}, (prevProps, nextProps) => {
+  return (
+    prevProps.activeParameter === nextProps.activeParameter &&
+    prevProps.mapMode === nextProps.mapMode &&
+    prevProps.isDark === nextProps.isDark &&
+    prevProps.mapMarkers.length === nextProps.mapMarkers.length
+  );
+});
+const MemoizedLineChart = React.memo(({ chartData, activeParameter, theme, isDark, handleDataPointClick, isChartUpdating, chartTooltip }: any) => {
+  if (chartData.labels[0] === 'No Data') {
+    return null;
+  }
+
+  const pointsCount = chartData.labels.length;
+  // Calculate dynamic width based on data points to prevent overlapping
+  // Spacing widened to 72px so every single point displays its date label beautifully without overlap
+  const chartWidth = Math.max(SCREEN_WIDTH - 24, pointsCount * 72);
+
+  // Deeply override the dataset to be completely transparent for the background Y-axis overlay
+  // This removes the colored vertical line next to the Y-axis labels perfectly!
+  const yAxisChartData = useMemo(() => {
+    return {
+      ...chartData,
+      datasets: chartData.datasets.map((ds: any) => ({
+        ...ds,
+        color: () => 'transparent',
+        strokeWidth: 0,
+        withDots: false,
+      }))
+    };
+  }, [chartData]);
+
+  return (
+    <View style={{ height: 232, position: 'relative', flexDirection: 'row' }}>
+      
+      {/* 1. Static Floating Y-Axis Panel Overlay on the Left - narrowed to 36px to bring graph extremely close */}
+      <View style={{
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        width: 36,
+        height: 192,
+        zIndex: 10,
+        overflow: 'hidden',
+        borderTopLeftRadius: 16,
+        borderBottomLeftRadius: 16,
+      }}>
+        {/* Frosted / Solid Backdrop to mask scrolling content */}
+        <BlurView 
+          intensity={isDark ? 20 : 30} 
+          tint={isDark ? "dark" : "light"} 
+          style={[StyleSheet.absoluteFillObject, { backgroundColor: isDark ? 'rgba(16,22,17,0.85)' : 'rgba(255,255,255,0.88)' }]} 
+        />
+        <LineChart
+          data={yAxisChartData}
+          width={100} // wider to compute scale properly but we clip to 36px
+          height={232}
+          chartConfig={{
+            backgroundColor: theme.surface,
+            backgroundGradientFrom: theme.surface,
+            backgroundGradientFromOpacity: 0,
+            backgroundGradientTo: theme.surface,
+            backgroundGradientToOpacity: 0,
+            decimalPlaces: activeParameter === 'pH Level' ? 1 : 0,
+            color: () => 'transparent', // Hide main graph line
+            labelColor: (opacity = 1) => isDark ? theme.textMuted : '#94A3B8',
+            propsForLabels: { fontFamily: 'Sora_400Regular', fontSize: 10 },
+            propsForBackgroundLines: { strokeDasharray: '0', stroke: 'transparent', strokeWidth: 0 },
+            propsForDots: { r: '0', strokeWidth: '0', stroke: 'transparent' },
+          }}
+          style={{ marginLeft: -24, marginTop: 8 }}
+          withInnerLines={false}
+          withOuterLines={false}
+          withVerticalLines={false}
+          withHorizontalLines={false}
+          withVerticalLabels={false}
+          withHorizontalLabels={true}
+          withDots={false}
+          withShadow={false}
+        />
+      </View>
+
+      {/* 2. Horizontally Scrollable Plot Area - paddingLeft set to 6px */}
+      <ScrollView
+        horizontal={true}
+        showsHorizontalScrollIndicator={false}
+        style={{ flex: 1 }}
+        contentContainerStyle={{ flexGrow: 1, paddingLeft: 6, paddingRight: 16 }}
+      >
+        <View style={{ position: 'relative', width: chartWidth }}>
+          <LineChart
+            data={chartData}
+            width={chartWidth}
+            height={232}
+            chartConfig={{
+              backgroundColor: theme.surface,
+              backgroundGradientFrom: theme.surface,
+              backgroundGradientTo: theme.surface,
+              decimalPlaces: activeParameter === 'pH Level' ? 1 : 0,
+              color: (opacity = 1) => getParamColor(theme, activeParameter),
+              labelColor: (opacity = 1) => isDark ? theme.textMuted : '#94A3B8',
+              style: { borderRadius: 16 },
+              propsForDots: { r: '6', strokeWidth: '2', stroke: theme.surface },              propsForLabels: { fontFamily: 'Sora_400Regular', fontSize: 10 },
+              propsForBackgroundLines: { strokeDasharray: '4,4', stroke: isDark ? theme.sep2 : '#F1F5F9', strokeWidth: 1 },
+            }}
+            bezier
+            style={{
+              ...styles.chart,
+              marginLeft: 0,
+              marginVertical: 0,
+              paddingLeft: 30,
+              paddingRight: 16,
+            }}
+            withInnerLines={true}
+            withOuterLines={false}
+            withVerticalLines={false}
+            withHorizontalLines={true}
+            withVerticalLabels={true}
+            withHorizontalLabels={false} // Disable labels to remove internal SVG margin space and eliminate shadow bug
+            onDataPointClick={handleDataPointClick}
+          />
+          {chartTooltip !== null && (chartData.fullDates?.[chartTooltip.index] || chartData.labels[chartTooltip.index]) && (
+            <View
+              pointerEvents="none"
+              style={[
+                styles.chartTooltipBox,
+                {
+                  left: (() => {
+                    const isLeftEdge = chartTooltip.index === 0;
+                    const isRightEdge = chartTooltip.index === chartData.labels.length - 1;
+                    if (isLeftEdge) return chartTooltip.x + 8; // Offset completely to the right of the dot so it's not hidden under the Y-axis
+                    if (isRightEdge) return chartTooltip.x - 98; // Offset to the left of the dot
+                    return Math.max(4, chartTooltip.x - 50); // Default centered
+                  })(),
+                  top: Math.max(4, chartTooltip.y - 66),
+                  backgroundColor: isDark ? theme.surfaceAlt : '#1E293B'
+                },
+              ]}
+            >
+              <Text style={[styles.tooltipDateText, { color: isDark ? theme.textMuted : '#94A3B8' }]}>
+                {chartData.fullDates?.[chartTooltip.index] || chartData.labels[chartTooltip.index]}
+              </Text>
+              <Text style={[styles.tooltipValueText, { color: getParamColor(theme, activeParameter) }]}>
+                {activeParameter === 'pH Level'
+                  ? chartTooltip.value.toFixed(1)
+                  : Math.round(chartTooltip.value).toString()}
+                {UNITS[activeParameter as ParameterName] ? ` ${UNITS[activeParameter as ParameterName]}` : ''}
+              </Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {isChartUpdating && (
+        <View style={[styles.chartUpdatingOverlay, { backgroundColor: isDark ? 'rgba(16,22,17,0.58)' : 'rgba(255,255,255,0.62)' }]}>
+          <View style={[styles.chartUpdatingPill, { backgroundColor: theme.surface, borderColor: isDark ? theme.sep2 : '#E2E8F0' }]}>
+            <ActivityIndicator size="small" color={theme.primary} />
+            <Text style={[styles.chartUpdatingText, { color: theme.textSecondary }]}>Updating</Text>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}, (prev, next) => {
+  return (
+    prev.chartData === next.chartData &&
+    prev.activeParameter === next.activeParameter &&
+    prev.isDark === next.isDark &&
+    prev.isChartUpdating === next.isChartUpdating &&
+    prev.chartTooltip === next.chartTooltip
+  );
+});
+
+
 export default function HistoryScreen({ navigation }: any) {
   const { theme, isDark } = useDarkModeTheme();
   const { user } = useAuthStore();
@@ -100,7 +371,7 @@ export default function HistoryScreen({ navigation }: any) {
   // isFocused kept for potential future use but map no longer depends on it
   const isFocused = useIsFocused();
 
-  const [logs, setLogs] = useState<SoilTest[]>([]);
+  const [logs, setLogs] = useState<ProcessedSoilTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,11 +379,19 @@ export default function HistoryScreen({ navigation }: any) {
 
   const [selectedParameter, setSelectedParameter] = useState<ParameterName>('Nitrogen');
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('30 Days');
-  const [isFilterTransitionPending, startFilterTransition] = useTransition();
-  const activeTimeFilter = useDeferredValue(timeFilter);
-  const activeParameter = useDeferredValue(selectedParameter);
-  const isChartUpdating = isFilterTransitionPending || activeTimeFilter !== timeFilter || activeParameter !== selectedParameter;
+  const [isChartUpdating, setIsChartUpdating] = useState(false);
+  const activeTimeFilter = timeFilter;
+  const activeParameter = selectedParameter;
   const [mapMode, setMapMode] = useState<'satellite' | 'standard' | 'osm'>(Platform.OS === 'android' ? 'satellite' : 'standard');
+
+  const [mapParameter, setMapParameter] = useState<ParameterName>('Nitrogen');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMapParameter(selectedParameter);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [selectedParameter]);
   const [selectedLog, setSelectedLog] = useState<SoilTest | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
   // Use a ref so isMapReady persists across focus changes without triggering re-renders
@@ -124,6 +403,75 @@ export default function HistoryScreen({ navigation }: any) {
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const mapRef = useRef<MapView>(null);
   const fullMapRef = useRef<MapView>(null);
+
+  const mapModalY = useSharedValue(MAP_SHEET_HEIGHT);
+
+  const closeMapFullscreen = useCallback(() => {
+    mapModalY.value = withTiming(MAP_SHEET_HEIGHT, { duration: 250 }, () => {
+      runOnJS(setIsMapFullscreen)(false);
+    });
+  }, []);
+
+  const onMapPanGesture = (event: PanGestureHandlerGestureEvent) => {
+    if (event.nativeEvent.translationY > 0) {
+      mapModalY.value = event.nativeEvent.translationY;
+    }
+  };
+
+  const onMapPanStateChange = (event: any) => {
+    if (event.nativeEvent.oldState === 4) { // State.ACTIVE
+      if (event.nativeEvent.translationY > 120 || event.nativeEvent.velocityY > 500) {
+        closeMapFullscreen();
+      } else {
+        mapModalY.value = withSpring(0, { damping: 22, stiffness: 160 });
+      }
+    }
+  };
+
+  const mapModalAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: mapModalY.value }],
+  }));
+
+  useEffect(() => {
+    if (isMapFullscreen) {
+      mapModalY.value = MAP_SHEET_HEIGHT;
+      mapModalY.value = withSpring(0, { damping: 22, stiffness: 150 });
+    }
+  }, [isMapFullscreen]);
+
+  const detailsModalY = useSharedValue(0);
+
+  const closeDetailsModal = useCallback(() => {
+    detailsModalY.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, () => {
+      runOnJS(setIsModalVisible)(false);
+    });
+  }, []);
+
+  const onDetailsPanGesture = (event: PanGestureHandlerGestureEvent) => {
+    if (event.nativeEvent.translationY > 0) {
+      detailsModalY.value = event.nativeEvent.translationY;
+    }
+  };
+
+  const onDetailsPanStateChange = (event: any) => {
+    if (event.nativeEvent.oldState === 4) { // State.ACTIVE
+      if (event.nativeEvent.translationY > 120 || event.nativeEvent.velocityY > 500) {
+        closeDetailsModal();
+      } else {
+        detailsModalY.value = withSpring(0, { damping: 22, stiffness: 160 });
+      }
+    }
+  };
+
+  const detailsModalAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: detailsModalY.value }],
+  }));
+
+  useEffect(() => {
+    if (isModalVisible) {
+      detailsModalY.value = 0;
+    }
+  }, [isModalVisible]);
 
   const COLORS_THEMED = useMemo(() => ({
     backgroundTop: theme.bg0,
@@ -175,35 +523,41 @@ export default function HistoryScreen({ navigation }: any) {
 
   const handleSelectTimeFilter = useCallback((filter: TimeFilter) => {
     try {
-      Haptics.selectionAsync().catch(e =>
-        console.log('[History] Haptics error:', e)
-      );
-    } catch (e) {
-      console.log('[History] Sync haptics error:', e);
-    }
-    startFilterTransition(() => setTimeFilter(filter));
+      Haptics.selectionAsync().catch(() => {});
+    } catch {}
     setIsTimeMenuVisible(false);
     setChartTooltip(null);
-  }, [startFilterTransition]);
+    setIsChartUpdating(true);
+    setTimeout(() => {
+      setTimeFilter(filter);
+      setTimeout(() => setIsChartUpdating(false), 50);
+    }, 150);
+  }, []);
 
   const handleSelectParam = useCallback((param: ParameterName) => {
     try {
-      Haptics.selectionAsync().catch(e =>
-        console.log('[History] Haptics error:', e)
-      );
-    } catch (e) {
-      console.log('[History] Sync haptics error:', e);
-    }
-    startFilterTransition(() => setSelectedParameter(param));
+      Haptics.selectionAsync().catch(() => {});
+    } catch {}
     setIsParamMenuVisible(false);
     setChartTooltip(null);
-  }, [startFilterTransition]);
+    setIsChartUpdating(true);
+    setTimeout(() => {
+      setSelectedParameter(param);
+      setTimeout(() => setIsChartUpdating(false), 50);
+    }, 150);
+  }, []);
 
 
 
   // Change map mode
   const handleSetMapMode = useCallback((mode: 'satellite' | 'standard' | 'osm') => {
     setMapMode(mode);
+  }, []);
+
+  const handleDataPointClick = useCallback(({ value, index, x, y }: any) => {
+    setChartTooltip(prev =>
+      prev?.index === index ? null : { x, y, value, index }
+    );
   }, []);
 
   // Guard: only fetch once on mount, not on every tab focus
@@ -222,10 +576,20 @@ export default function HistoryScreen({ navigation }: any) {
       const data = await getSoilTests(user.id);
       console.log('[History] Successfully fetched', data.length, 'soil tests');
 
-      // Sort by date descending
-      const sorted = [...data].sort((a, b) =>
-        new Date(b.testDate).getTime() - new Date(a.testDate).getTime()
-      );
+      // Pre-process dates ONCE to avoid heavy computation during renders/filters
+      const processedData: ProcessedSoilTest[] = data.map(log => {
+        const parsed = safeParseDate(log.testDate);
+        return {
+          ...log,
+          parsedTime: parsed.getTime(),
+          formattedDate: format(parsed, 'MMM d'),
+          formattedDateFull: format(parsed, 'MMM d, yyyy'),
+          formattedTime: format(parsed, 'hh:mm a')
+        };
+      });
+
+      // Sort by parsedTime descending
+      const sorted = processedData.sort((a, b) => b.parsedTime - a.parsedTime);
 
       setLogs(sorted);
 
@@ -301,8 +665,8 @@ export default function HistoryScreen({ navigation }: any) {
     if (activeTimeFilter === '90 Days') daysToSubtract = 90;
     if (activeTimeFilter === '1 Year') daysToSubtract = 365;
 
-    const cutoff = subDays(now, daysToSubtract);
-    return logs.filter(log => isAfter(parseISO(log.testDate), cutoff));
+    const cutoffTime = subDays(now, daysToSubtract).getTime();
+    return logs.filter(log => log.parsedTime >= cutoffTime);
   }, [logs, activeTimeFilter]);
 
   // Calculate statistics for the selected parameter
@@ -331,22 +695,34 @@ export default function HistoryScreen({ navigation }: any) {
     };
   }, [filteredLogs, activeParameter]);
 
-  // Prepare chart data (max 7 points for readability)
+  // Prepare chart data (render ALL points from selected dataset with LEFT = Latest, RIGHT = Oldest)
   const chartData = useMemo(() => {
     const key = getParamKey(activeParameter);
-    const points = filteredLogs.slice(0, 7).reverse();
+    // LEFT is Latest / Most Recent, RIGHT is Oldest (matches filteredLogs descending sort)
+    const points = [...filteredLogs];
 
     if (points.length === 0) {
       return {
         labels: ['No Data'],
+        fullDates: ['No Data'],
         datasets: [{ data: [0] }]
       };
     }
 
+    // Clean data values to avoid NaN/undefined and ensure mathematical safety
+    const datasetData = points.map(l => {
+      const val = Number(l[key]);
+      return isNaN(val) ? 0 : val;
+    });
+
+    // Render labels for EVERY point as requested by the user
+    const labels = points.map(l => l.formattedDate);
+
     return {
-      labels: points.map(l => format(parseISO(l.testDate), 'MMM d')),
+      labels,
+      fullDates: points.map(l => l.formattedDateFull),
       datasets: [{
-        data: points.map(l => Number(l[key] ?? 0)),
+        data: datasetData,
         color: (opacity = 1) => getParamColor(theme, activeParameter),
         strokeWidth: 3
       }]
@@ -415,7 +791,7 @@ export default function HistoryScreen({ navigation }: any) {
       .map(log => ({
         id: log.id,
         coordinate: { latitude: Number(log.latitude), longitude: Number(log.longitude) },
-        date: log.testDate
+        title: `Test on ${log.formattedDateFull}`
       }));
   }, [logs]);
 
@@ -440,6 +816,50 @@ export default function HistoryScreen({ navigation }: any) {
     );
   }
 
+  const renderLogItem = useCallback(({ item: log, index }: { item: ProcessedSoilTest; index: number }) => {
+    const totalItems = filteredLogs.length;
+    return (
+      <View style={[styles.timelineRow, { paddingHorizontal: 4 }]} key={log.id || index.toString()}>
+        <View style={styles.timelineLineContainer}>
+          <View style={[styles.timelineDot, { backgroundColor: getParamColor(theme, activeParameter), borderColor: isDark ? theme.bg1 : '#FFF', shadowColor: getParamColor(theme, activeParameter) }]} />
+          {index !== totalItems - 1 && <View style={[styles.timelineLine, { backgroundColor: isDark ? theme.sep2 : '#E2E8F0' }]} />}
+        </View>
+        <TouchableOpacity style={[styles.timelineContent, { backgroundColor: theme.surface, borderColor: isDark ? theme.sep2 : 'rgba(15,23,42,0.06)' }]} onPress={() => openDetails(log)} activeOpacity={0.7}>
+          <View style={[styles.logIcon, { backgroundColor: isDark ? theme.bg1 : '#F0FDF4' }]}><Ionicons name="leaf" size={18} color={getParamColor(theme, activeParameter)} /></View>
+          <View style={styles.logInfo}>
+            <Text style={[styles.logDate, { color: theme.textPrimary }]}>{log.formattedDateFull}</Text>
+            <Text style={[styles.logTime, { color: theme.textSecondary }]}>{log.formattedTime}</Text>
+          </View>
+          <View style={styles.logValues}>
+            <Text style={[styles.logMainValue, { color: getParamColor(theme, activeParameter) }]}>
+              {activeParameter === 'pH Level' ? 'pH' : (activeParameter === 'Moisture' ? 'M' : activeParameter.charAt(0))}{' '}
+              {Number(log[getParamKey(activeParameter)]).toFixed(activeParameter === 'pH Level' ? 1 : 0)}
+              <Text style={styles.logUnitSmall}> {UNITS[activeParameter as ParameterName]}</Text>
+            </Text>
+            <Text style={[styles.logSubValue, { color: theme.textSecondary }]}>
+              {activeParameter !== 'pH Level' && `pH:${Number(log.ph).toFixed(1)} `}
+              {activeParameter !== 'Nitrogen' && `N:${Number(log.nitrogen).toFixed(0)} `}
+              {activeParameter !== 'Phosphorus' && `P:${Number(log.phosphorus).toFixed(0)} `}
+              {activeParameter !== 'Potassium' && `K:${Number(log.potassium).toFixed(0)}`}
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color={isDark ? theme.border : "#CBD5E1"} />
+        </TouchableOpacity>
+      </View>
+    );
+  }, [activeParameter, theme, isDark, openDetails, filteredLogs.length]);
+
+  const ListEmpty = useCallback(() => {
+    if (loading) return null;
+    return (
+      <View style={styles.noDataContainer}>
+        <LottieView source={require('../../assets/animations/soil-analysis-data.json')} autoPlay loop style={styles.historyLottie} resizeMode="contain" />
+        <Text style={[styles.noDataTitle, { color: COLORS_THEMED.title }]}>No Records</Text>
+        <Text style={[styles.noData, { color: COLORS_THEMED.subtitle }]}>No soil tests in the selected {timeFilter} range.</Text>
+      </View>
+    );
+  }, [loading, timeFilter, COLORS_THEMED]);
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
@@ -462,8 +882,8 @@ export default function HistoryScreen({ navigation }: any) {
       </View>
 
       <ScrollView
-        showsVerticalScrollIndicator={true}
-        contentContainerStyle={[styles.scrollContent, { paddingBottom: 20 }]}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS_THEMED.accent} />
         }
@@ -514,10 +934,9 @@ export default function HistoryScreen({ navigation }: any) {
             </View>
           </View>
           <View style={[styles.mapContainer, { borderColor: isDark ? theme.sep2 : '#E2E8F0' }]}>
-            {/* MapView is always mounted — never conditionally removed — to prevent reload on navigation */}
-            <MapView
-              ref={mapRef}
-              style={styles.map}
+            <MemoizedMap
+              mapRef={mapRef}
+              mapStyle={styles.map}
               provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
               initialRegion={mapInitialRegion}
               mapType={
@@ -541,29 +960,12 @@ export default function HistoryScreen({ navigation }: any) {
               rotateEnabled={false}
               pitchEnabled={false}
               moveOnMarkerPress={false}
-            >
-              {mapMode === 'osm' && (
-                <UrlTile
-                  urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-                  maximumZ={19}
-                  tileSize={256}
-                  zIndex={1}
-                />
-              )}
-              {mapMarkers.map((marker) => (
-                <Marker
-                  key={`${marker.id}-${activeParameter}`}
-                  coordinate={marker.coordinate}
-                  title={`Test on ${format(parseISO(marker.date), 'MMM d, yyyy')}`}
-                  tracksViewChanges={false}
-                >
-                  <View style={[styles.customMarker, { borderColor: getParamColor(theme, activeParameter), backgroundColor: isDark ? theme.surface : '#FFF' }]}>
-                    <View style={[styles.markerDot, { backgroundColor: getParamColor(theme, activeParameter) }]} />
-                  </View>
-                </Marker>
-              ))}
-            </MapView>
-            {/* Overlay spinner shown only while map tiles load for the first time */}
+              mapMode={mapMode}
+              mapMarkers={mapMarkers}
+              activeParameter={mapParameter}
+              theme={theme}
+              isDark={isDark}
+            />
             {!isMapReady && (
               <View style={[styles.mapLoaderOverlay, { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)' }]}>
                 <ActivityIndicator size="small" color={COLORS_THEMED.accent} />
@@ -572,96 +974,7 @@ export default function HistoryScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Partial Map Sheet */}
-        <Modal
-          visible={isMapFullscreen}
-          animationType="fade"
-          transparent
-          statusBarTranslucent
-          onRequestClose={() => setIsMapFullscreen(false)}
-        >
-          <View style={styles.mapSheetOverlay}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={() => setIsMapFullscreen(false)} />
-            <View style={[styles.mapSheet, { height: MAP_SHEET_HEIGHT, backgroundColor: theme.surface, borderColor: COLORS_THEMED.border }]}>
-              <View style={[styles.mapSheetHandle, { backgroundColor: isDark ? theme.sep2 : '#CBD5E1' }]} />
-              <View style={styles.mapSheetHeader}>
-                <View>
-                  <Text style={[styles.mapSheetTitle, { color: COLORS_THEMED.title }]}>Field Locations</Text>
-                  <Text style={[styles.mapSheetSubtitle, { color: COLORS_THEMED.subtitle }]}>{mapMarkers.length} mapped tests</Text>
-                </View>
-                <Pressable
-                  onPress={() => setIsMapFullscreen(false)}
-                  style={({ pressed }) => [styles.mapSheetClose, { backgroundColor: pressed ? theme.surfaceAlt : isDark ? theme.bg1 : '#F1F5F9' }]}
-                >
-                  <Ionicons name="contract-outline" size={18} color={COLORS_THEMED.title} />
-                </Pressable>
-              </View>
-              <View style={[styles.mapSheetControls, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC' }]}>
-                {(['satellite', 'standard', 'osm'] as const).map(mode => (
-                  <Pressable
-                    key={mode}
-                    onPress={() => handleSetMapMode(mode)}
-                    style={({ pressed }) => [
-                      styles.mapTypeBtn,
-                      mapMode === mode && [styles.mapTypeBtnActive, { backgroundColor: isDark ? theme.surfaceAlt : '#FFF' }],
-                      pressed && { opacity: 0.72 },
-                    ]}
-                  >
-                    <Text style={[styles.mapTypeLabel, { color: theme.textSecondary }, mapMode === mode && [styles.mapTypeLabelActive, { color: COLORS_THEMED.accent }]]}>
-                      {mode === 'osm' ? 'OSM' : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-              <View style={[styles.mapSheetMapWrap, { borderColor: isDark ? theme.sep2 : '#E2E8F0' }]}>
-                <MapView
-                  ref={fullMapRef}
-                  style={StyleSheet.absoluteFillObject}
-                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
-                  initialRegion={mapInitialRegion}
-                  mapType={
-                    mapMode === 'satellite'
-                      ? 'satellite'
-                      : (mapMode === 'standard'
-                        ? 'standard'
-                        : (Platform.OS === 'android' ? 'none' : 'standard'))
-                  }
-                  showsUserLocation={true}
-                  showsMyLocationButton={true}
-                  scrollEnabled={true}
-                  zoomEnabled={true}
-                  zoomControlEnabled={true}
-                  rotateEnabled={false}
-                  pitchEnabled={false}
-                  moveOnMarkerPress={false}
-                >
-                  {mapMode === 'osm' && (
-                    <UrlTile
-                      urlTemplate="https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png"
-                      maximumZ={19}
-                      tileSize={256}
-                      zIndex={1}
-                    />
-                  )}
-                  {mapMarkers.map((marker) => (
-                    <Marker
-                      key={`sheet-${marker.id}-${activeParameter}`}
-                      coordinate={marker.coordinate}
-                      title={`Test on ${format(parseISO(marker.date), 'MMM d, yyyy')}`}
-                      tracksViewChanges={false}
-                    >
-                      <View style={[styles.customMarker, { borderColor: getParamColor(theme, activeParameter), backgroundColor: isDark ? theme.surface : '#FFF' }]}>
-                        <View style={[styles.markerDot, { backgroundColor: getParamColor(theme, activeParameter) }]} />
-                      </View>
-                    </Marker>
-                  ))}
-                </MapView>
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* 2. Premium Apple Style Dropdown Filters */}
+        {/* 2. Premium Dropdown Filters */}
         <View style={styles.dropdownRow}>
           <Pressable
             style={({ pressed }) => [styles.appleDropdownBtn, { backgroundColor: theme.surface, borderColor: isDark ? theme.sep2 : '#E8EDF5' }, pressed && { opacity: 0.7 }]}
@@ -698,70 +1011,16 @@ export default function HistoryScreen({ navigation }: any) {
               <Text style={[styles.noData, { color: COLORS_THEMED.subtitle }]}>Insufficient data to show trend for {timeFilter}.</Text>
             </View>
           ) : (
-            // overflow:hidden clips the wide chart SVG to the card boundary — fixes white bleed on L/R
             <View style={{ overflow: 'hidden', marginHorizontal: -16, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }}>
-              <View style={{ position: 'relative' }}>
-                <LineChart
-                  data={chartData}
-                  width={SCREEN_WIDTH + 45}
-                  height={232}
-                  chartConfig={{
-                    backgroundColor: theme.surface, backgroundGradientFrom: theme.surface, backgroundGradientTo: theme.surface,
-                    decimalPlaces: activeParameter === 'pH Level' ? 1 : 0,
-                    color: (opacity = 1) => getParamColor(theme, activeParameter),
-                    labelColor: (opacity = 1) => isDark ? theme.textMuted : '#94A3B8',
-                    style: { borderRadius: 16 },
-                    propsForDots: { r: '6', strokeWidth: '2', stroke: theme.surface },
-                    propsForLabels: { fontFamily: 'Sora_400Regular', fontSize: 10 },
-                    propsForBackgroundLines: { strokeDasharray: '4,4', stroke: isDark ? theme.sep2 : '#F1F5F9', strokeWidth: 1 },
-                  }}
-                  bezier
-                  style={{ ...styles.chart, marginLeft: -33, marginVertical: 0 }}
-                  withInnerLines={true}
-                  withOuterLines={false}
-                  withVerticalLines={false}
-                  withHorizontalLines={true}
-                  onDataPointClick={({ value, index, x, y }) => {
-                    setChartTooltip(prev =>
-                      prev?.index === index ? null : { x, y, value, index }
-                    );
-                  }}
-                />
-                {isChartUpdating && (
-                  <View style={[styles.chartUpdatingOverlay, { backgroundColor: isDark ? 'rgba(16,22,17,0.58)' : 'rgba(255,255,255,0.62)' }]}>
-                    <View style={[styles.chartUpdatingPill, { backgroundColor: theme.surface, borderColor: isDark ? theme.sep2 : '#E2E8F0' }]}>
-                      <ActivityIndicator size="small" color={COLORS_THEMED.accent} />
-                      <Text style={[styles.chartUpdatingText, { color: COLORS_THEMED.subtitle }]}>Updating</Text>
-                    </View>
-                  </View>
-                )}
-                {chartTooltip !== null && (
-                  <View
-                    pointerEvents="none"
-                    style={[
-                      styles.chartTooltipBox,
-                      {
-                        left: Math.max(4, Math.min(
-                          chartTooltip.x - 16 - 45,
-                          SCREEN_WIDTH - 95
-                        )),
-                        top: Math.max(4, chartTooltip.y - 66),
-                        backgroundColor: isDark ? theme.surfaceAlt : '#1E293B'
-                      },
-                    ]}
-                  >
-                    <Text style={[styles.tooltipDateText, { color: isDark ? theme.textMuted : '#94A3B8' }]}>
-                      {chartData.labels[chartTooltip.index]}
-                    </Text>
-                    <Text style={[styles.tooltipValueText, { color: getParamColor(theme, activeParameter) }]}>
-                      {activeParameter === 'pH Level'
-                        ? chartTooltip.value.toFixed(1)
-                        : Math.round(chartTooltip.value).toString()}
-                      {UNITS[activeParameter] ? ` ${UNITS[activeParameter]}` : ''}
-                    </Text>
-                  </View>
-                )}
-              </View>
+              <MemoizedLineChart
+                chartData={chartData}
+                activeParameter={activeParameter}
+                theme={theme}
+                isDark={isDark}
+                handleDataPointClick={handleDataPointClick}
+                isChartUpdating={isChartUpdating}
+                chartTooltip={chartTooltip}
+              />
             </View>
           )}
         </View>
@@ -790,53 +1049,24 @@ export default function HistoryScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* 5. History log title */}
-        <View style={[styles.historyCard, { backgroundColor: COLORS_THEMED.card, borderColor: COLORS_THEMED.border, paddingBottom: 16 }]}>
-          <Text style={[styles.cardTitle, { color: COLORS_THEMED.subtitle }]}>
+        {/* 5. TEST HISTORY LOG Card Container with embedded fixed-height FlatList */}
+        <View style={[styles.historyCard, { backgroundColor: COLORS_THEMED.card, borderColor: COLORS_THEMED.border }]}>
+          <Text style={[styles.cardTitle, { color: COLORS_THEMED.subtitle, marginBottom: 16 }]}>
             Test History Log ({timeFilter === 'All Time' ? 'All Time' : `Last ${timeFilter}`})
           </Text>
-          {loading && <View style={styles.chartLoader}><ActivityIndicator color={COLORS_THEMED.accent} /></View>}
-          {!loading && filteredLogs.length === 0 ? (
-            <View style={styles.noDataContainer}>
-              <LottieView source={require('../../assets/animations/soil-analysis-data.json')} autoPlay loop style={styles.historyLottie} resizeMode="contain" />
-              <Text style={[styles.noDataTitle, { color: COLORS_THEMED.title }]}>No Records</Text>
-              <Text style={[styles.noData, { color: COLORS_THEMED.subtitle }]}>No soil tests in the selected {timeFilter} range.</Text>
-            </View>
+
+          {loading && logs.length === 0 ? (
+            <View style={styles.chartLoader}><ActivityIndicator color={COLORS_THEMED.accent} /></View>
+          ) : filteredLogs.length === 0 ? (
+            <ListEmpty />
           ) : (
             <ScrollView
-              style={{ marginTop: 25, maxHeight: 450 }}
+              style={styles.historyList}
+              contentContainerStyle={{ paddingBottom: 16 }}
               nestedScrollEnabled={true}
               showsVerticalScrollIndicator={true}
             >
-              {filteredLogs.map((log, index) => (
-                <View style={styles.timelineRow} key={log.id || index.toString()}>
-                  <View style={styles.timelineLineContainer}>
-                    <View style={[styles.timelineDot, { backgroundColor: COLORS_THEMED.accent, borderColor: isDark ? theme.bg1 : '#FFF', shadowColor: COLORS_THEMED.accent }]} />
-                    {index !== filteredLogs.length - 1 && <View style={[styles.timelineLine, { backgroundColor: isDark ? theme.sep2 : '#E2E8F0' }]} />}
-                  </View>
-                  <TouchableOpacity style={[styles.timelineContent, { backgroundColor: theme.surface, borderColor: COLORS_THEMED.border }]} onPress={() => openDetails(log)} activeOpacity={0.7}>
-                    <View style={[styles.logIcon, { backgroundColor: isDark ? theme.bg1 : '#F0FDF4' }]}><Ionicons name="leaf" size={18} color={COLORS_THEMED.accent} /></View>
-                    <View style={styles.logInfo}>
-                      <Text style={[styles.logDate, { color: COLORS_THEMED.title }]}>{format(parseISO(log.testDate), 'MMM d, yyyy')}</Text>
-                      <Text style={[styles.logTime, { color: COLORS_THEMED.subtitle }]}>{format(parseISO(log.testDate), 'hh:mm a')}</Text>
-                    </View>
-                    <View style={styles.logValues}>
-                      <Text style={[styles.logMainValue, { color: getParamColor(theme, activeParameter) }]}>
-                        {activeParameter === 'pH Level' ? 'pH' : (activeParameter === 'Moisture' ? 'M' : activeParameter.charAt(0))}{' '}
-                        {Number(log[getParamKey(activeParameter)]).toFixed(activeParameter === 'pH Level' ? 1 : 0)}
-                        <Text style={styles.logUnitSmall}> {UNITS[activeParameter]}</Text>
-                      </Text>
-                      <Text style={[styles.logSubValue, { color: COLORS_THEMED.subtitle }]}>
-                        {activeParameter !== 'pH Level' && `pH:${Number(log.ph).toFixed(1)} `}
-                        {activeParameter !== 'Nitrogen' && `N:${Number(log.nitrogen).toFixed(0)} `}
-                        {activeParameter !== 'Phosphorus' && `P:${Number(log.phosphorus).toFixed(0)} `}
-                        {activeParameter !== 'Potassium' && `K:${Number(log.potassium).toFixed(0)}`}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={isDark ? theme.border : "#CBD5E1"} />
-                  </TouchableOpacity>
-                </View>
-              ))}
+              {filteredLogs.map((log, index) => renderLogItem({ item: log, index }))}
             </ScrollView>
           )}
         </View>
@@ -849,138 +1079,137 @@ export default function HistoryScreen({ navigation }: any) {
         transparent={true}
         onRequestClose={() => setIsModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: theme.surface }]}>
-            <View style={[styles.modalGrabber, { backgroundColor: isDark ? theme.sep2 : '#CBD5E1' }]} />
-            <View style={styles.modalHeader}>
-              <Text style={[styles.modalTitle, { color: COLORS_THEMED.title }]}>Test Details</Text>
-              <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.closeButton}>
-                <Ionicons name="close-circle-outline" size={28} color={COLORS_THEMED.subtitle} />
-              </TouchableOpacity>
-            </View>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <Animated.View style={[styles.modalContent, { backgroundColor: theme.surface }, detailsModalAnimatedStyle]}>
+              {/* Wrap only the top area (grabber & header) in PanGestureHandler as the drag handle */}
+              <PanGestureHandler
+                onGestureEvent={onDetailsPanGesture}
+                onHandlerStateChange={onDetailsPanStateChange}
+              >
+                <Animated.View style={{ width: '100%', alignItems: 'center', paddingBottom: 10 }}>
+                  <View style={[styles.modalGrabber, { backgroundColor: isDark ? theme.sep2 : '#CBD5E1' }]} />
+                  <View style={[styles.modalHeader, { width: '100%', marginBottom: 0 }]}>
+                    <Text style={[styles.modalTitle, { color: COLORS_THEMED.title }]}>Test Details</Text>
+                    <TouchableOpacity onPress={() => setIsModalVisible(false)} style={styles.closeButton}>
+                      <Ionicons name="close-circle-outline" size={28} color={COLORS_THEMED.subtitle} />
+                    </TouchableOpacity>
+                  </View>
+                </Animated.View>
+              </PanGestureHandler>
 
-            {selectedLog && (
-              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
-                {/* 1. Metrics Section */}
-                <Text style={[styles.sectionTitle, { color: COLORS_THEMED.title }]}>Metrics</Text>
-                <View style={styles.modalHero}>
-                  <View style={[styles.scoreCircle, { borderColor: isDark ? theme.bg1 : '#F0FDF4' }]}>
-                    <Text style={[styles.scoreValue, { color: COLORS_THEMED.accent }]}>{selectedLog.healthScore || 'N/A'}</Text>
-                    <Text style={[styles.scoreLabel, { color: COLORS_THEMED.subtitle }]}>Health Score</Text>
-                  </View>
-                  <View style={[styles.statusBadge, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC' }]}>
-                    <View style={[styles.statusDot, { backgroundColor: selectedLog.status === 'Critical' ? '#EF4444' : '#10B981' }]} />
-                    <Text style={[styles.statusText, { color: COLORS_THEMED.title }]}>{selectedLog.status || 'Good'}</Text>
-                  </View>
-                  <Text style={[styles.modalDate, { color: COLORS_THEMED.subtitle }]}>
-                    {format(parseISO(selectedLog.testDate), 'MMMM d, yyyy • hh:mm a')}
+              {selectedLog && (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 40 }}>
+                  {/* Start showing directly from the Date/Time as a premium heading */}
+                  <Text style={[styles.modalDateHeading, { color: COLORS_THEMED.subtitle }]}>
+                    {safeFormatDate(selectedLog.testDate, 'MMMM d, yyyy • hh:mm a')}
                   </Text>
-                </View>
 
-                <View style={styles.modalStatsGrid}>
-                  <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                    <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Nitrogen</Text>
-                    <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.nitrogen).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
-                  </View>
-                  <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                    <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Phosphorus</Text>
-                    <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.phosphorus).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
-                  </View>
-                  <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                    <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Potassium</Text>
-                    <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.potassium).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
-                  </View>
-                  <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                    <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>pH Level</Text>
-                    <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.ph).toFixed(1)}</Text>
-                  </View>
-                  <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                    <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Moisture</Text>
-                    <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{selectedLog.moisture != null ? `${Number(selectedLog.moisture).toFixed(1)}%` : 'N/A'}</Text>
-                  </View>
-                  <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                    <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Temp</Text>
-                    <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{selectedLog.temperature != null ? `${Number(selectedLog.temperature).toFixed(1)}°C` : 'N/A'}</Text>
-                  </View>
-                </View>
-
-                {/* 2. AI Recommendation Section */}
-                <Text style={[styles.sectionTitle, { color: COLORS_THEMED.title }]}>AI Recommendation</Text>
-                <View style={[styles.recommendationCard, { backgroundColor: COLORS_THEMED.warningBg, borderColor: COLORS_THEMED.warningBorder }]}>
-                  <View style={styles.recommendationHeader}>
-                    <Ionicons name="sparkles" size={20} color={COLORS_THEMED.accent} />
-                    <Text style={[styles.recommendationTitle, { color: COLORS_THEMED.title }]}>Insights</Text>
-                  </View>
-                  {selectedLog.recommendation?.recommendations ? (
-                    <Text style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569' }]}>
-                      {selectedLog.recommendation.recommendations}
-                    </Text>
-                  ) : (
-                    <Text style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569' }]}>
-                      Based on your soil analysis, your soil health is currently stable. Maintain regular organic composting and ensure balanced irrigation.
-                    </Text>
-                  )}
-                  {selectedLog.recommendation?.naturalFertilizers && selectedLog.recommendation.naturalFertilizers.length > 0 && (
-                    <View style={{ marginTop: 12 }}>
-                      <Text style={[styles.recommendationTitle, { color: COLORS_THEMED.title, fontSize: 13, marginBottom: 8, marginLeft: 0 }]}>🌿 Natural Fertilizers</Text>
-                      {selectedLog.recommendation.naturalFertilizers.slice(0, 3).map((f, i) => (
-                        <Text key={i} style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569', marginBottom: 4 }]}>
-                          • <Text style={{ fontFamily: 'Sora_600SemiBold' }}>{f.name}</Text> — {f.amount}
-                        </Text>
-                      ))}
+                  <View style={styles.modalStatsGrid}>
+                    <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                      <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Nitrogen</Text>
+                      <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.nitrogen).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
                     </View>
-                  )}
-                  {selectedLog.recommendation?.chemicalFertilizers && selectedLog.recommendation.chemicalFertilizers.length > 0 && (
-                    <View style={{ marginTop: 12 }}>
-                      <Text style={[styles.recommendationTitle, { color: COLORS_THEMED.title, fontSize: 13, marginBottom: 8, marginLeft: 0 }]}>🧪 Chemical Fertilizers</Text>
-                      {selectedLog.recommendation.chemicalFertilizers.slice(0, 3).map((f, i) => (
-                        <Text key={i} style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569', marginBottom: 4 }]}>
-                          • <Text style={{ fontFamily: 'Sora_600SemiBold' }}>{f.name}</Text> — {f.amount}
-                        </Text>
-                      ))}
+                    <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                      <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Phosphorus</Text>
+                      <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.phosphorus).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
                     </View>
-                  )}
-                </View>
+                    <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                      <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Potassium</Text>
+                      <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.potassium).toFixed(0)} <Text style={styles.modalUnit}>ppm</Text></Text>
+                    </View>
+                    <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                      <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>pH Level</Text>
+                      <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{Number(selectedLog.ph).toFixed(1)}</Text>
+                    </View>
+                    <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                      <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Moisture</Text>
+                      <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{selectedLog.moisture != null ? `${Number(selectedLog.moisture).toFixed(1)}%` : 'N/A'}</Text>
+                    </View>
+                    <View style={[styles.modalStatCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                      <Text style={[styles.modalStatLabel, { color: COLORS_THEMED.subtitle }]}>Temp</Text>
+                      <Text style={[styles.modalStatValue, { color: COLORS_THEMED.title }]}>{selectedLog.temperature != null ? `${Number(selectedLog.temperature).toFixed(1)}°C` : 'N/A'}</Text>
+                    </View>
+                  </View>
 
-                {/* 3. Location Section */}
-                <Text style={[styles.sectionTitle, { color: COLORS_THEMED.title }]}>Location</Text>
-                <View style={[styles.locationCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
-                  {selectedLog.latitude != null ? (
-                    <>
-                      <Ionicons name="location" size={24} color={COLORS_THEMED.accent} style={{ marginRight: 12 }} />
-                      <View>
-                        <Text style={[styles.locationDetailTitle, { color: COLORS_THEMED.title }]}>Coordinates</Text>
-                        <Text style={[styles.locationDetailText, { color: COLORS_THEMED.subtitle }]}>
-                          {Number(selectedLog.latitude).toFixed(6)}, {Number(selectedLog.longitude).toFixed(6)}
-                        </Text>
+                  {/* 2. AI Recommendation Section */}
+                  <Text style={[styles.sectionTitle, { color: COLORS_THEMED.title }]}>AI Recommendation</Text>
+                  <View style={[styles.recommendationCard, { backgroundColor: COLORS_THEMED.warningBg, borderColor: COLORS_THEMED.warningBorder }]}>
+                    <View style={styles.recommendationHeader}>
+                      <Ionicons name="sparkles" size={20} color={COLORS_THEMED.accent} />
+                      <Text style={[styles.recommendationTitle, { color: COLORS_THEMED.title }]}>Insights</Text>
+                    </View>
+                    {selectedLog.recommendation?.recommendations ? (
+                      <Text style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569' }]}>
+                        {selectedLog.recommendation.recommendations}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569' }]}>
+                        Based on your soil analysis, your soil health is currently stable. Maintain regular organic composting and ensure balanced irrigation.
+                      </Text>
+                    )}
+                    {selectedLog.recommendation?.naturalFertilizers && selectedLog.recommendation.naturalFertilizers.length > 0 && (
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={[styles.recommendationTitle, { color: COLORS_THEMED.title, fontSize: 13, marginBottom: 8, marginLeft: 0 }]}>🌿 Natural Fertilizers</Text>
+                        {selectedLog.recommendation.naturalFertilizers.slice(0, 3).map((f, i) => (
+                          <Text key={i} style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569', marginBottom: 4 }]}>
+                            • <Text style={{ fontFamily: 'Sora_600SemiBold' }}>{f.name}</Text> — {f.amount}
+                          </Text>
+                        ))}
                       </View>
-                    </>
-                  ) : (
-                    <>
-                      <Ionicons name="location-outline" size={24} color={COLORS_THEMED.subtitle} style={{ marginRight: 12 }} />
-                      <View>
-                        <Text style={[styles.locationDetailTitle, { color: COLORS_THEMED.title }]}>Location Unavailable</Text>
-                        <Text style={[styles.locationDetailText, { color: COLORS_THEMED.subtitle }]}>No coordinates recorded</Text>
+                    )}
+                    {selectedLog.recommendation?.chemicalFertilizers && selectedLog.recommendation.chemicalFertilizers.length > 0 && (
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={[styles.recommendationTitle, { color: COLORS_THEMED.title, fontSize: 13, marginBottom: 8, marginLeft: 0 }]}>🧪 Chemical Fertilizers</Text>
+                        {selectedLog.recommendation.chemicalFertilizers.slice(0, 3).map((f, i) => (
+                          <Text key={i} style={[styles.recommendationText, { color: isDark ? theme.textSecondary : '#475569', marginBottom: 4 }]}>
+                            • <Text style={{ fontFamily: 'Sora_600SemiBold' }}>{f.name}</Text> — {f.amount}
+                          </Text>
+                        ))}
                       </View>
-                    </>
-                  )}
-                </View>
+                    )}
+                  </View>
 
-                <TouchableOpacity
-                  style={[styles.modalExportButton, { backgroundColor: COLORS_THEMED.title }]}
-                  onPress={() => {
-                    setIsModalVisible(false);
-                    exportSoilReport([selectedLog], user as any);
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="download-outline" size={20} color={isDark ? theme.background : "#FFF"} style={{ marginRight: 8 }} />
-                  <Text style={[styles.modalExportText, { color: isDark ? theme.background : "#FFF" }]}>Export Report</Text>
-                </TouchableOpacity>
-              </ScrollView>
-            )}
+                  {/* 3. Location Section */}
+                  <Text style={[styles.sectionTitle, { color: COLORS_THEMED.title }]}>Location</Text>
+                  <View style={[styles.locationCard, { backgroundColor: isDark ? theme.bg1 : '#F8FAFC', borderColor: isDark ? theme.sep2 : '#F1F5F9' }]}>
+                    {selectedLog.latitude != null ? (
+                      <>
+                        <Ionicons name="location" size={24} color={COLORS_THEMED.accent} style={{ marginRight: 12 }} />
+                        <View>
+                          <Text style={[styles.locationDetailTitle, { color: COLORS_THEMED.title }]}>Coordinates</Text>
+                          <Text style={[styles.locationDetailText, { color: COLORS_THEMED.subtitle }]}>
+                            {Number(selectedLog.latitude).toFixed(6)}, {Number(selectedLog.longitude).toFixed(6)}
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons name="location-outline" size={24} color={COLORS_THEMED.subtitle} style={{ marginRight: 12 }} />
+                        <View>
+                          <Text style={[styles.locationDetailTitle, { color: COLORS_THEMED.title }]}>Location Unavailable</Text>
+                          <Text style={[styles.locationDetailText, { color: COLORS_THEMED.subtitle }]}>No coordinates recorded</Text>
+                        </View>
+                      </>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.modalExportButton, { backgroundColor: COLORS_THEMED.title }]}
+                    onPress={() => {
+                      setIsModalVisible(false);
+                      exportSoilReport([selectedLog], user as any);
+                    }}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="download-outline" size={20} color={isDark ? theme.background : "#FFF"} style={{ marginRight: 8 }} />
+                    <Text style={[styles.modalExportText, { color: isDark ? theme.background : "#FFF" }]}>Export Report</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              )}
+            </Animated.View>
           </View>
-        </View>
+        </GestureHandlerRootView>
       </Modal>
 
       {/* Time Filter Bottom Sheet */}
@@ -1157,7 +1386,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 90,
   },
   header: {
     flexDirection: 'row',
@@ -1403,6 +1632,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 20,
     elevation: 16,
+  },
+  mapSheetDragArea: {
+    width: '100%',
+    paddingBottom: 4,
   },
   mapSheetHandle: {
     width: 44,
@@ -1885,7 +2118,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 1,
     borderColor: COLORS.border,
-    marginBottom: 80,
+    marginBottom: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.03,
@@ -1893,7 +2126,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   historyList: {
-    maxHeight: 420, // fixed height — scrollable inside the card
+    maxHeight: 440, // fixed height — scrollable inside the card
   },
   dropdownRow: {
     flexDirection: 'row',
@@ -2005,5 +2238,11 @@ const styles = StyleSheet.create({
   tooltipValueText: {
     fontFamily: 'Sora_700Bold',
     fontSize: 14,
+  },
+  modalDateHeading: {
+    fontFamily: 'Sora_600SemiBold',
+    fontSize: 16,
+    marginBottom: 20,
+    paddingHorizontal: 4,
   },
 });

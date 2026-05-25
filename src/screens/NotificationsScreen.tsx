@@ -8,7 +8,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Colors } from '@/constants/Colors';
-import { useTheme } from '@/context/ThemeContext';
+import { useDarkModeTheme } from '@/context/ThemeContext';
 import { Shadows } from '@/constants/Shadows';
 import { Type } from '@/constants/Typography';
 import { getNotifications, AppNotification, markNotificationRead, markAllNotificationsRead, NotificationType } from '@/services/notifications';
@@ -26,7 +26,7 @@ const getNotifIcon = (type: NotificationType, theme: any) => {
 };
 
 export default function NotificationsScreen() {
-  const { theme, isDark } = useTheme();
+  const { theme, isDark } = useDarkModeTheme();
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

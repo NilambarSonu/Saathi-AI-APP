@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { tokenCache } from '@/utils/tokenCache';
 import { saveAuthTokens, clearAuthTokens, getStoredAccessToken } from '@/services/api';
+import apiClient, { invalidateCache } from '@/api/axiosConfig';
 
 const API_BASE_URL = 'https://www.saathiai.org';
 const TOKEN_KEY   = 'saathi_auth_token';   // ← matches axiosConfig.ts TOKEN_KEY
@@ -53,7 +54,7 @@ interface AuthState {
 export const useAuthStore = create<AuthState>((set, get) => {
   // Listen for unrecoverable 401s from the API to auto-logout
   tokenCache.onAuthFailure(() => {
-    console.log('[AuthStore] Auto-logout triggered by API 401');
+    if (__DEV__) console.log('[AuthStore] Auto-logout triggered by API 401');
     get().logout();
   });
 
@@ -72,9 +73,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
       const token = await getStoredAccessToken();
       if (!token) {
         set({ isInitialized: true, isLoading: false });
-        console.log('[AuthStore] Rehydrated - no token found');
+        if (__DEV__) console.log('[AuthStore] Rehydrated - no token found');
         return;
       }
+
+      // Warm up tokenCache with access and refresh tokens so axiosConfig is ready
+      const refreshToken = await AsyncStorage.getItem(REFRESH_KEY);
+      tokenCache.set(token, refreshToken);
 
       // Load locally-cached user profile first (instant, no network)
       let localUser: AuthUser | null = null;
@@ -83,50 +88,57 @@ export const useAuthStore = create<AuthState>((set, get) => {
         if (cached) localUser = JSON.parse(cached);
       } catch { /* ignore */ }
 
-      const res = await fetch(`${API_BASE_URL}/api/user`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'x-client-type': 'mobile',
-        },
-      });
+      // ✅ True Offline-Safe Rehydration: Always restore session optimistically if a token is recovered from disk!
+      // If the cached user profile is missing or corrupted, load a safe template profile instead of forcing logout.
+      const restoredUser: AuthUser = localUser || {
+        id: '',
+        username: 'Farmer',
+        email: '',
+        phone: null,
+        location: null,
+        provider: 'local',
+        profilePicture: null,
+        preferredLanguage: 'en',
+        createdAt: '',
+      };
 
-      if (res.ok) {
-        const data = await res.json();
-        tokenCache.set(token);
-        const serverUser = mapUser(data.user);
-        // Merge: prefer locally-saved name/location over DB if DB returns null/empty
-        // (server may not persist location field correctly)
-        const mergedUser: AuthUser = {
-          ...serverUser,
-          username: serverUser.username || localUser?.username || '',
-          location: serverUser.location || localUser?.location || null,
-          profilePicture: serverUser.profilePicture || localUser?.profilePicture || null,
-        };
-        set({ token, user: mergedUser, isAuthenticated: true, isInitialized: true, isLoading: false });
-        // Keep local cache in sync
-        await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mergedUser)).catch(() => {});
-        console.log('[AuthStore] Session restored for', mergedUser.username);
-      } else {
-        await clearAuthTokens();
-        tokenCache.clear();
-        await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
-        set({ token: null, user: null, isAuthenticated: false, isInitialized: true, isLoading: false });
-        console.log('[AuthStore] Stored token invalid, cleared session');
-      }
-    } catch {
-      // Network error — restore from local cache if available
-      try {
-        const cached = await AsyncStorage.getItem(USER_CACHE_KEY);
-        if (cached) {
-          const localUser: AuthUser = JSON.parse(cached);
-          set({ isInitialized: true, isLoading: false, isAuthenticated: true, user: localUser });
-          console.log('[AuthStore] Network error — restored user from local cache');
-          return;
+      set({ token, user: restoredUser, isAuthenticated: true, isInitialized: true, isLoading: false });
+      if (__DEV__) console.log('[AuthStore] Restored session optimistically for', restoredUser.username);
+
+      // Silent background network verification
+      (async () => {
+        try {
+          const response = await apiClient.get('/user');
+          const data = response.data;
+          const currentToken = await getStoredAccessToken() || token;
+          const currentRefreshToken = await AsyncStorage.getItem(REFRESH_KEY) || refreshToken;
+          tokenCache.set(currentToken, currentRefreshToken);
+
+          const serverUser = mapUser(data.user ?? data);
+          const mergedUser: AuthUser = {
+            ...serverUser,
+            username: serverUser.username || restoredUser.username || '',
+            location: serverUser.location || restoredUser.location || null,
+            profilePicture: serverUser.profilePicture || restoredUser.profilePicture || null,
+          };
+          set({ user: mergedUser });
+          await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mergedUser)).catch(() => {});
+          if (__DEV__) console.log('[AuthStore] Background session verification completed successfully');
+        } catch (err: any) {
+          const status = err.response?.status;
+          if (status === 401 || status === 403) {
+            if (__DEV__) console.warn('[AuthStore] Background session check invalid - logging out');
+            await clearAuthTokens();
+            tokenCache.clear();
+            await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
+            set({ token: null, user: null, isAuthenticated: false });
+          }
         }
-      } catch { /* ignore */ }
+      })();
+      return;
+    } catch (e) {
       set({ isInitialized: true, isLoading: false, isAuthenticated: false });
-      console.log('[AuthStore] Network error during init, proceeding unauthenticated');
+      if (__DEV__) console.log('[AuthStore] Unexpected error during init', e);
     }
   },
 
@@ -154,14 +166,23 @@ export const useAuthStore = create<AuthState>((set, get) => {
         throw new Error('Server did not return an access token. Please try again.');
       }
 
-      // ✅ Save to SecureStore and AsyncStorage using api.ts
-      await saveAuthTokens(data.token, data.refreshToken);
-      tokenCache.set(data.token, data.refreshToken);
-
-      console.log('[AuthStore] Login successful for', data.user?.username);
-
       const mappedUser = mapUser(data.user);
-      await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser)).catch(() => {});
+
+      // ✅ Save to SecureStore and AsyncStorage FIRST (concurrently, very fast)
+      try {
+        await Promise.all([
+          saveAuthTokens(data.token, data.refreshToken || undefined),
+          AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser))
+        ]);
+      } catch (e) {
+        if (__DEV__) console.error('[Storage] login persistence failed:', e);
+      }
+
+      tokenCache.set(data.token, data.refreshToken);
+      invalidateCache();
+
+      if (__DEV__) console.log('[AuthStore] Login successful for', data.user?.username);
+
       set({
         token: data.token,
         user: mappedUser,
@@ -201,22 +222,15 @@ export const useAuthStore = create<AuthState>((set, get) => {
       await saveAuthTokens(token);
       tokenCache.set(token);
 
-      const res = await fetch(`${API_BASE_URL}/api/user`, {
+      const response = await apiClient.get('/user', {
         headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          'x-client-type': 'mobile',
-        },
+          Authorization: `Bearer ${token}`
+        }
       });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `Server returned ${res.status}`);
-      }
-
-      const data = await res.json();
-      set({ token, user: mapUser(data.user), isAuthenticated: true, isLoading: false, error: null });
-      console.log('[AuthStore] OAuth login successful for', data.user?.username);
+      const data = response.data;
+      const user = data.user ?? data;
+      set({ token, user: mapUser(user), isAuthenticated: true, isLoading: false, error: null });
+      if (__DEV__) console.log('[AuthStore] OAuth login successful for', user?.username);
     } catch (err: any) {
       await clearAuthTokens();
       tokenCache.clear();
@@ -230,16 +244,22 @@ export const useAuthStore = create<AuthState>((set, get) => {
     tokenCache.clear();
     await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
     set({ user: null, token: null, isAuthenticated: false, error: null });
-    console.log('[AuthStore] Logged out');
+    if (__DEV__) console.log('[AuthStore] Logged out');
   },
 
   clearError: () => set({ error: null }),
 
   setSession: async (user, token, refreshToken) => {
-    await saveAuthTokens(token, refreshToken || undefined);
-    tokenCache.set(token, refreshToken || null);
     const mappedUser = mapUser(user);
-    await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser)).catch(() => {});
+    try {
+      await Promise.all([
+        saveAuthTokens(token, refreshToken || undefined),
+        AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser))
+      ]);
+    } catch (e) {
+      if (__DEV__) console.error('[AuthStore] setSession storage failed:', e);
+    }
+    tokenCache.set(token, refreshToken || null);
     set({ token, user: mappedUser, isAuthenticated: true, isInitialized: true, isLoading: false, error: null });
   },
 

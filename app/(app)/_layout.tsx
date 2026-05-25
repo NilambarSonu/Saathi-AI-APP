@@ -1,18 +1,18 @@
 import React, { useEffect } from 'react';
-import { Platform, View, ActivityIndicator } from 'react-native';
+import { Platform, View, ActivityIndicator, InteractionManager } from 'react-native';
 import { Stack, Redirect } from 'expo-router';
 import { useAuthStore } from '@/store/authStore';
 import { tokenCache } from '@/utils/tokenCache';
 import { registerForPushNotifications } from '@/services/notifications';
 import { registerDevice } from '@/features/auth/services/auth';
-import { useTheme } from '@/context/ThemeContext';
+import { useDarkModeTheme } from '@/context/ThemeContext';
 
 // expo-navigation-bar setVisibilityAsync is safe with edge-to-edge.
 // The unsupported APIs (setPositionAsync, setBehaviorAsync) have been removed.
 import * as NavigationBar from 'expo-navigation-bar';
 
 export default function AppLayout() {
-  const { theme } = useTheme();
+  const { theme } = useDarkModeTheme();
   const isAuthenticated = useAuthStore(s => s.isAuthenticated);
   const isLoading = useAuthStore(s => s.isLoading);
   const user = useAuthStore(s => s.user);
@@ -36,22 +36,26 @@ export default function AppLayout() {
   }, []);
 
   useEffect(() => {
-    async function setupPushNotifications() {
-      if (!user) return;
-      try {
-        const token = await registerForPushNotifications();
-        if (token) {
-          await registerDevice({
-            expo_push_token: token,
-            device_type: Platform.OS as 'ios' | 'android',
-            device_name: `${Platform.OS} Device`,
-          });
+    if (!user) return;
+    const task = InteractionManager.runAfterInteractions(() => {
+      async function setupPushNotifications() {
+        try {
+          const token = await registerForPushNotifications();
+          if (token) {
+            await registerDevice({
+              expo_push_token: token,
+              device_type: Platform.OS as 'ios' | 'android',
+              device_name: `${Platform.OS} Device`,
+            });
+          }
+        } catch (err) {
+          console.warn('[Push Setup]', err);
         }
-      } catch (err) {
-        console.warn('[Push Setup]', err);
       }
-    }
-    setupPushNotifications();
+      setupPushNotifications();
+    });
+
+    return () => task.cancel();
   }, [user?.id]);
 
   // ── Wait for Zustand to finish rehydrating from AsyncStorage before

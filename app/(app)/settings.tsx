@@ -12,7 +12,6 @@ import { useAuthStore } from '@/store/authStore';
 import { useDarkModeTheme, useTheme } from '@/context/ThemeContext';
 import apiClient from '@/api/axiosConfig';
 import { useTranslation } from '@/context/LanguageContext';
-import apiClient from '@/api/axiosConfig';
 import { getUserData } from '@/features/auth/services/user';
 import { logout } from '@/features/auth/services/auth';
 import * as Sharing from 'expo-sharing';
@@ -332,6 +331,35 @@ export default function SettingsScreen() {
               <Ionicons name="warning-outline" size={18} color={theme.error} />
             </View>
             <View style={styles.cardHeaderText}>
+              <Text style={[styles.cardTitle, { color: theme.error }]}>{t('settings.dangerZone.title')}</Text>
+              <Text style={[styles.cardSubtitle, { color: theme.error + 'AA' }]}>{t('settings.dangerZone.subtitle')}</Text>
+            </View>
+          </View>
+          <Text style={[styles.dangerNote, { color: theme.error + 'AA' }]}>{t('settings.dangerZone.desc')}</Text>
+          <View style={styles.dangerRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.toggleLabel, { color: theme.error }]}>{t('settings.dangerZone.deleteLabel')}</Text>
+              <Text style={[styles.toggleDesc, { color: theme.textSecondary }]}>{t('settings.dangerZone.deleteDesc')}</Text>
+            </View>
+            <Pressable
+              style={[styles.deleteBtn, { backgroundColor: theme.error }, isDeleting && { opacity: 0.6 }]}
+              onPress={handleDeleteAccount}
+              disabled={isDeleting}
+            >
+              {isDeleting ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Ionicons name="trash-outline" size={16} color="#fff" />
+              )}
+              <Text style={styles.deleteBtnText}>{isDeleting ? t('common.loading') : t('settings.dangerZone.deleteBtn')}</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={{ height: 120 }} />
+      </ScrollView>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({

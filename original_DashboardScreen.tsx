@@ -2,28 +2,20 @@
  * dashboard.tsx — Saathi AI Home Screen
  * True Liquid Glassmorphism (No Plastic Neumorphism)
  */
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Animated, Easing, Dimensions, Platform, ActivityIndicator, InteractionManager
+  Animated, Easing, Dimensions, Platform, ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons, MaterialCommunityIcons, Feather } from '@expo/vector-icons';
-
-import AnimatedReanimated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  runOnJS,
-} from 'react-native-reanimated';
-import { GestureHandlerRootView, PanGestureHandler, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/Colors';
 import { router } from 'expo-router';
 import { Shadows } from '@/constants/Shadows';
 import { Type } from '@/constants/Typography';
+import { useTranslation } from '@/context/LanguageContext';
 import { Image, Modal } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { getDashboardStats, DashboardStats } from '@/services/analytics';
@@ -34,9 +26,7 @@ import { tabBarY, hideTabBar, showTabBar } from '@/constants/Animations';
 
 import { useHomeTheme } from '@/context/ThemeContext';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const BouncingIndicator = React.memo(function BouncingIndicator({ state }: { state: 'connecting' | 'connected' | 'disconnected' }) {
+function BouncingIndicator({ state }: { state: 'connecting' | 'connected' | 'disconnected' }) {
   const { theme } = useHomeTheme();
   const y = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -64,7 +54,7 @@ const BouncingIndicator = React.memo(function BouncingIndicator({ state }: { sta
       )}
     </View>
   );
-});
+}
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const getGreeting = () => {
   const h = new Date().getHours();
@@ -131,7 +121,7 @@ const AWARDS = [
 ];
 const AWARDS_X2 = [...AWARDS, ...AWARDS];
 
-const AwardsTicker = React.memo(function AwardsTicker() {
+function AwardsTicker() {
   const { theme } = useHomeTheme();
   const x = useRef(new Animated.Value(0)).current;
   const W_PILL = 200;
@@ -160,10 +150,10 @@ const AwardsTicker = React.memo(function AwardsTicker() {
       </Animated.View>
     </View>
   );
-});
+}
 
 // ─── Reusable Components ────────────────────────────────────────────────────────
-const SectionHeader = React.memo(function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   const { theme } = useHomeTheme();
   return (
     <View style={s.sectionHeader}>
@@ -175,18 +165,18 @@ const SectionHeader = React.memo(function SectionHeader({ title, action, onActio
       )}
     </View>
   );
-});
+}
 
-const GlassCard = React.memo(function GlassCard({ style, children }: { style?: any; children: React.ReactNode }) {
+function GlassCard({ style, children }: { style?: any; children: React.ReactNode }) {
   const { theme } = useHomeTheme();
   return (
     <View style={[s.card, { backgroundColor: theme.surface, borderColor: theme.sep2 }, style]}>
       {children}
     </View>
   );
-});
+}
 
-const AnimatedCounter = React.memo(function AnimatedCounter({ value, style }: { value: number, style?: any }) {
+function AnimatedCounter({ value, style }: { value: number, style?: any }) {
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -214,9 +204,9 @@ const AnimatedCounter = React.memo(function AnimatedCounter({ value, style }: { 
   }, [value]);
 
   return <Text style={style}>{current.toLocaleString('en-IN')}</Text>;
-});
+}
 
-const FloatingAgniDevice = React.memo(function FloatingAgniDevice() {
+function FloatingAgniDevice() {
   const y = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(
@@ -231,9 +221,9 @@ const FloatingAgniDevice = React.memo(function FloatingAgniDevice() {
       <Image source={require('assets/images/Agni_Device.png')} style={{ width: '100%', height: '100%', resizeMode: 'contain' }} />
     </Animated.View>
   );
-});
+}
 
-const HowItWorksTicker = React.memo(function HowItWorksTicker() {
+function HowItWorksTicker() {
   const { theme, isDark } = useHomeTheme();
   
   const HOW_STEPS = [
@@ -318,23 +308,23 @@ const HowItWorksTicker = React.memo(function HowItWorksTicker() {
       </Animated.View>
     </View>
   );
-});
+}
 
 export default function DashboardScreen() {
   const { theme, isDark } = useHomeTheme();
+  const { t } = useTranslation();
   const user = useAuthStore(s => s.user);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const isStatsLoading = statsLoading === true;
-  const [mountStage, setMountStage] = useState(1);
 
   const FEATURES = [
-    { id: 'analysis', icon: 'trending-up', color: theme.featureGreen, bg: theme.fillGreen, title: 'Instant Analysis', subtitle: 'Get comprehensive soil health data in seconds with our Agni device.', tabIndex: 2 },
-    { id: 'language', icon: 'brain', color: theme.featureBlue, bg: theme.fillBlue, title: 'Local Language', subtitle: 'Receive recommendations in Odia, Hindi, or English with voice support.', tabIndex: 2 },
-    { id: 'farming', icon: 'microscope', color: theme.featureAmber, bg: theme.fillAmber, title: 'Sustainable Farming', subtitle: 'AI-powered organic fertilizer recommendations for better crop yield.', tabIndex: 2 },
-    { id: 'mapping', icon: 'map-marker-radius', color: theme.featurePurple, bg: theme.fillPurple, title: 'Field Mapping', subtitle: 'Visualize your soil data on interactive maps for better field management.', tabIndex: 2 },
+    { id: 'analysis', icon: 'trending-up', color: theme.featureGreen, bg: theme.fillGreen, title: t('dashboard.features.soilReport.title'), subtitle: t('dashboard.features.soilReport.desc'), tabIndex: 2 },
+    { id: 'language', icon: 'brain', color: theme.featureBlue, bg: theme.fillBlue, title: t('dashboard.features.aiAdvisory.title'), subtitle: t('dashboard.features.aiAdvisory.desc'), tabIndex: 2 },
+    { id: 'farming', icon: 'microscope', color: theme.featureAmber, bg: theme.fillAmber, title: t('dashboard.features.weatherForecast.title'), subtitle: 'AI-powered organic fertilizer recommendations for better crop yield.', tabIndex: 2 },
+    { id: 'mapping', icon: 'map-marker-radius', color: theme.featurePurple, bg: theme.fillPurple, title: t('dashboard.features.cropCalendar.title'), subtitle: 'Visualize your soil data on interactive maps for better field management.', tabIndex: 2 },
   ];
 
   const FEATURE_DETAILS: Record<string, any> = {
@@ -376,93 +366,60 @@ export default function DashboardScreen() {
     }
   };
 
-  // POPUP STATE & GESTURE CONTROL (Reanimated + PanGestureHandler)
+  // POPUP STATE
   const [selectedFeature, setSelectedFeature] = useState<string | null>(null);
-  const popupFadeVal = useSharedValue(0);
-  const popupSlideVal = useSharedValue(SCREEN_HEIGHT);
+  const popupFade = useRef(new Animated.Value(0)).current;
+  const popupSlide = useRef(new Animated.Value(400)).current;
 
   const showPopup = (id: string) => {
     setSelectedFeature(id);
+    Animated.parallel([
+      Animated.timing(popupFade, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.spring(popupSlide, { toValue: 0, tension: 50, friction: 10, useNativeDriver: true })
+    ]).start();
     hideTabBar();
-    popupFadeVal.value = withTiming(1, { duration: 350 });
-    popupSlideVal.value = withSpring(0, { damping: 20, stiffness: 140 });
   };
 
-  const hidePopup = useCallback(() => {
-    popupFadeVal.value = withTiming(0, { duration: 250 });
-    popupSlideVal.value = withTiming(SCREEN_HEIGHT, { duration: 250 }, () => {
-      runOnJS(setSelectedFeature)(null);
-      runOnJS(showTabBar)();
+  const hidePopup = () => {
+    Animated.parallel([
+      Animated.timing(popupFade, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(popupSlide, { toValue: 400, duration: 300, useNativeDriver: true })
+    ]).start(() => {
+      setSelectedFeature(null);
+      showTabBar();
     });
-  }, []);
-
-  const onPopupPanGesture = (event: PanGestureHandlerGestureEvent) => {
-    if (event.nativeEvent.translationY > 0) {
-      popupSlideVal.value = event.nativeEvent.translationY;
-    }
   };
-
-  const onPopupPanStateChange = (event: any) => {
-    if (event.nativeEvent.oldState === 4) { // State.ACTIVE
-      if (event.nativeEvent.translationY > 120 || event.nativeEvent.velocityY > 500) {
-        hidePopup();
-      } else {
-        popupSlideVal.value = withSpring(0, { damping: 20, stiffness: 140 });
-      }
-    }
-  };
-
-  const popupOverlayAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: popupFadeVal.value,
-  }));
-
-  const popupCardAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: popupSlideVal.value }],
-  }));
 
   const handleConnect = () => {
     useNavigationStore.getState().setCurrentIndex(1);
   };
 
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
-      setMountStage(2); // Stage 2: Hydrate Stats
+    async function loadStats() {
+      setStatsLoading(true);
+      setStatsError(null);
 
-      setTimeout(() => {
-        setMountStage(3); // Stage 3: Connect Card
-        requestAnimationFrame(() => {
-          setMountStage(4); // Stage 4: Analytics/Heavy Content
-        });
-      }, 50);
-
-      async function loadStats() {
-        setStatsLoading(true);
-        setStatsError(null);
-
-        try {
-          const data = await getDashboardStats();
-          // Only set stats if we got a valid response (null means error or no data yet)
-          if (data) {
-            setStats(data);
-          } else {
-            setStats(null);
-          }
-        } catch (e: any) {
+      try {
+        const data = await getDashboardStats();
+        // Only set stats if we got a valid response (null means error or no data yet)
+        if (data) {
+          setStats(data);
+        } else {
           setStats(null);
-          setStatsError(e?.message || 'Unable to load dashboard stats.');
-        } finally {
-          setStatsLoading(false);
         }
+      } catch (e: any) {
+        setStats(null);
+        setStatsError(e?.message || 'Unable to load dashboard stats.');
+      } finally {
+        setStatsLoading(false);
       }
+    }
 
-      loadStats();
+    loadStats();
 
-      getNotifications().then(data => setNotifications(Array.isArray(data) ? data : [])).catch(() => {
-        setNotifications([]);
-      });
+    getNotifications().then(data => setNotifications(Array.isArray(data) ? data : [])).catch(() => {
+      setNotifications([]);
     });
-
-    return () => task.cancel();
   }, []);
 
   /* Tab Bar visibility logic moved to constants/Animations.ts */
@@ -493,7 +450,7 @@ export default function DashboardScreen() {
           <View style={{ flex: 1, paddingRight: 12 }}>
 
             {/* ADJUST WELCOME TEXT POSITION AND SIZE HERE */}
-            <Text numberOfLines={1} adjustsFontSizeToFit style={[s.greeting, { fontSize: 34, marginBottom: 2, marginTop: 28, paddingVertical: 10, lineHeight: 45, color: theme.label2 }]}>{getGreeting()}</Text>
+            <Text numberOfLines={1} adjustsFontSizeToFit style={[s.greeting, { fontSize: 34, marginBottom: 2, marginTop: 28, paddingVertical: 10, lineHeight: 45, color: theme.label2 }]}>{t('dashboard.greeting')}</Text>
 
             {/* ADJUST USER NAME SIZE HERE */}
 
@@ -519,101 +476,208 @@ export default function DashboardScreen() {
 
 
         {/* ── STATS ROW ── */}
-        {mountStage >= 2 && (
-          <>
-            {statsError && (
-              <View style={[s.statsAlert, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFFBEB', borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : '#FDE68A' }, Shadows.sm]}>
-                <Feather name="alert-circle" size={14} color={isDark ? theme.warning : "#B45309"} />
-                <Text style={[s.statsAlertText, { color: isDark ? theme.label2 : "#92400E" }]}>{statsError || 'Unable to load live stats right now.'}</Text>
-              </View>
-            )}
-
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 28 }}>
-              {[
-                { label: 'FARMS ANALYZED', value: stats?.farms, icon: 'map', color: isDark ? '#34D399' : '#059669', bg: theme.fillGreen, gradient: theme.statsGreen },
-                { label: 'SOIL TESTS', value: stats?.tests, icon: 'activity', color: isDark ? '#FBBF24' : '#D97706', bg: theme.fillAmber, gradient: theme.statsAmber },
-                { label: 'AI RECOMMENDATIONS', value: stats?.aiTips, icon: 'zap', color: isDark ? '#60A5FA' : '#2563EB', bg: theme.fillBlue, gradient: theme.statsBlue },
-              ].map((st, i) => (
-                <View key={i} style={[Shadows.sm, { flex: 1, borderRadius: 20, borderWidth: 1, borderColor: st.bg, overflow: 'hidden' }]}>
-                  <LinearGradient colors={st.gradient as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
-
-                  <View style={{ position: 'absolute', right: -15, bottom: -15, opacity: 0.15, transform: [{ rotate: '-15deg' }] }}>
-                    <Feather name={st.icon as any} size={70} color={st.color} />
-                  </View>
-
-                  <View style={{ paddingVertical: 14, paddingHorizontal: 12, alignItems: 'center' }}>
-                    <View style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.7)', padding: 8, borderRadius: 12, marginBottom: 8, ...Shadows.sm }}>
-                      <Feather name={st.icon as any} size={18} color={st.color} />
-                    </View>
-                    <Text style={{ fontSize: 11, color: theme.label2, fontFamily: 'Sora_700Bold', letterSpacing: 0.5, marginBottom: 4 }}>{st.label}</Text>
-                    {isStatsLoading
-                      ? <ActivityIndicator size="small" color={st.color} style={{ marginTop: 2 }} />
-                      : typeof st.value === 'number'
-                        ? <AnimatedCounter value={st.value} style={{ color: st.color, fontSize: 26, fontFamily: 'Sora_700Bold', letterSpacing: -1 }} />
-                        : <Text style={{ color: theme.label2, fontSize: 20, fontFamily: 'Sora_700Bold' }}>--</Text>}
-                  </View>
-                </View>
-              ))}
-            </View>
-          </>
+        {statsError && (
+          <View style={[s.statsAlert, { backgroundColor: isDark ? 'rgba(245, 158, 11, 0.15)' : '#FFFBEB', borderColor: isDark ? 'rgba(245, 158, 11, 0.3)' : '#FDE68A' }, Shadows.sm]}>
+            <Feather name="alert-circle" size={14} color={isDark ? theme.warning : "#B45309"} />
+            <Text style={[s.statsAlertText, { color: isDark ? theme.label2 : "#92400E" }]}>{statsError || 'Unable to load live stats right now.'}</Text>
+          </View>
         )}
 
+        <View style={{ flexDirection: 'row', gap: 10, marginBottom: 28 }}>
+          {[
+            { label: t('dashboard.quickStats.farmsAnalyzed'), value: stats?.farms, icon: 'map', color: isDark ? '#34D399' : '#059669', bg: theme.fillGreen, gradient: theme.statsGreen },
+            { label: t('dashboard.quickStats.soilTests'), value: stats?.tests, icon: 'activity', color: isDark ? '#FBBF24' : '#D97706', bg: theme.fillAmber, gradient: theme.statsAmber },
+            { label: t('dashboard.quickStats.aiRecs'), value: stats?.aiTips, icon: 'zap', color: isDark ? '#60A5FA' : '#2563EB', bg: theme.fillBlue, gradient: theme.statsBlue },
+          ].map((st, i) => (
+            <View
+              key={i}
+              style={{
+                flex: 1,
+                borderRadius: 20,
+                backgroundColor: isDark ? '#141A16' : '#FFFFFF',
+                elevation: 8,
+                shadowColor: st.color,
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: isDark ? 0.28 : 0.08,
+                shadowRadius: 12,
+              }}
+            >
+              <View style={{ flex: 1, borderRadius: 20, borderWidth: 1, borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', overflow: 'hidden' }}>
+                <LinearGradient colors={st.gradient as [string, string]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
+
+                {/* Subtle top edge highlight */}
+                <View
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 1.5,
+                    backgroundColor: isDark ? 'rgba(255, 255, 255, 0.16)' : 'rgba(255, 255, 255, 0.65)',
+                    zIndex: 10,
+                  }}
+                />
+
+                {/* Diagonal glass reflection */}
+                <LinearGradient
+                  colors={['rgba(255, 255, 255, 0.12)', 'rgba(255, 255, 255, 0)']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '50%',
+                    zIndex: 5,
+                  }}
+                />
+
+                <View style={{ position: 'absolute', right: -15, bottom: -15, opacity: 0.15, transform: [{ rotate: '-15deg' }] }}>
+                  <Feather name={st.icon as any} size={70} color={st.color} />
+                </View>
+
+                <View style={{ paddingVertical: 14, paddingHorizontal: 12, alignItems: 'center' }}>
+                  <View
+                    style={{
+                      backgroundColor: isDark ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.75)',
+                      padding: 8,
+                      borderRadius: 12,
+                      marginBottom: 8,
+                      borderWidth: 1,
+                      borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)',
+                      elevation: 2,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: isDark ? 0.2 : 0.05,
+                      shadowRadius: 3,
+                    }}
+                  >
+                    <Feather name={st.icon as any} size={18} color={st.color} />
+                  </View>
+                  <Text style={{ fontSize: 11, color: theme.label2, fontFamily: 'Sora_700Bold', letterSpacing: 0.5, marginBottom: 4 }}>{st.label}</Text>
+                  {isStatsLoading
+                    ? <ActivityIndicator size="small" color={st.color} style={{ marginTop: 2 }} />
+                    : typeof st.value === 'number'
+                      ? <AnimatedCounter value={st.value} style={{ color: st.color, fontSize: 26, fontFamily: 'Sora_700Bold', letterSpacing: -1 }} />
+                      : <Text style={{ color: theme.label2, fontSize: 20, fontFamily: 'Sora_700Bold' }}>--</Text>}
+                </View>
+              </View>
+            </View>
+          ))}
+        </View>
+
         {/* ── AGNI CONNECT HERO CARD ── */}
-        {mountStage >= 3 && (
+        {/* ── AGNI CONNECT HERO CARD ── */}
+        {isDark ? (
+          <View
+            style={{
+              shadowColor: 'rgba(212, 140, 56, 0.06)',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 1,
+              shadowRadius: 10,
+              marginBottom: 28,
+            }}
+          >
+            <View
+              style={[
+                s.heroCard,
+                {
+                  marginBottom: 0,
+                  backgroundColor: '#141816',
+                  borderColor: 'rgba(255, 184, 92, 0.10)',
+                  borderWidth: 1,
+                  shadowColor: '#000000',
+                  shadowOffset: { width: 0, height: 12 },
+                  shadowOpacity: 0.38,
+                  shadowRadius: 20,
+                  elevation: 6,
+                }
+              ]}
+            >
+              <LinearGradient
+                colors={['#141816', '#171C19', '#1A211D']}
+                locations={[0, 0.35, 1]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(196, 122, 36, 0.04)' }]} />
+
+              <View style={{ paddingVertical: 18, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={{ fontSize: 28, fontFamily: 'Sora_700Bold', color: theme.heroText, marginBottom: 12, letterSpacing: -0.8 }}>{t('dashboard.connectAgni.cardTitle')}</Text>
+                  <Text style={{ fontSize: 14, fontFamily: 'Sora_500Medium', color: theme.heroSubtext, lineHeight: 24, marginBottom: 24 }}>
+                    {t('dashboard.connectAgni.cardSubtitle')}
+                  </Text>
+                  <TouchableOpacity onPress={handleConnect} style={{ alignSelf: 'flex-start' }}>
+                    <LinearGradient colors={theme.heroBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.heroBtn, { borderWidth: 0, paddingHorizontal: 24 }]}>
+                      <Text style={{ fontSize: 16, fontFamily: 'Sora_600SemiBold', color: '#FFFFFF', marginRight: 10 }}>{t('dashboard.connectAgni.actionConnect')}</Text>
+                      <Feather name="arrow-right" size={18} color="#FFFFFF" />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+                <View style={{ position: 'relative' }}>
+                  <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(212, 140, 56, 0.06)', borderRadius: 50, filter: 'blur(20px)' as any, transform: [{ scale: 1.8 }] }]} />
+                  <FloatingAgniDevice />
+                </View>
+              </View>
+            </View>
+          </View>
+        ) : (
+          /* LIGHT THEME (EXACTLY UNCHANGED) */
           <View style={[s.heroCard, Shadows.md, { backgroundColor: theme.heroBackground, borderColor: theme.heroBorder, borderWidth: 1.5 }]}>
             <LinearGradient colors={theme.heroGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
 
             <View style={{ paddingVertical: 18, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ flex: 1, paddingRight: 10 }}>
-                <Text style={{ fontSize: 28, fontFamily: 'Sora_700Bold', color: theme.heroText, marginBottom: 12, letterSpacing: -0.8 }}>Connect Agni</Text>
+                <Text style={{ fontSize: 28, fontFamily: 'Sora_700Bold', color: theme.heroText, marginBottom: 12, letterSpacing: -0.8 }}>{t('dashboard.connectAgni.cardTitle')}</Text>
                 <Text style={{ fontSize: 14, fontFamily: 'Sora_500Medium', color: theme.heroSubtext, lineHeight: 24, marginBottom: 24 }}>
-                  Pair your soil sensor instantly for real-time insights.
+                  {t('dashboard.connectAgni.cardSubtitle')}
                 </Text>
                 <TouchableOpacity onPress={handleConnect} style={{ alignSelf: 'flex-start' }}>
                   <LinearGradient colors={theme.heroBtnGradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.heroBtn, { borderWidth: 0, paddingHorizontal: 24 }]}>
-                    <Text style={{ fontSize: 16, fontFamily: 'Sora_600SemiBold', color: '#FFFFFF', marginRight: 10 }}>Pair Agni</Text>
+                    <Text style={{ fontSize: 16, fontFamily: 'Sora_600SemiBold', color: '#FFFFFF', marginRight: 10 }}>{t('dashboard.connectAgni.actionConnect')}</Text>
                     <Feather name="arrow-right" size={18} color="#FFFFFF" />
                   </LinearGradient>
                 </TouchableOpacity>
               </View>
               <View style={{ position: 'relative' }}>
-                <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? 'rgba(34, 180, 85, 0.2)' : 'rgba(255, 107, 0, 0.1)', borderRadius: 50, filter: 'blur(20px)', transform: [{ scale: 1.5 }] }]} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255, 107, 0, 0.1)', borderRadius: 50, filter: 'blur(20px)', transform: [{ scale: 1.5 }] }]} />
                 <FloatingAgniDevice />
               </View>
             </View>
           </View>
         )}
 
-        {mountStage >= 4 && (
-          <>
-            <GlassCard style={{ padding: 21, marginBottom: 28, ...Shadows.md }}>
-              <Text style={{ ...Type.title3, color: theme.label1, marginBottom: 17 }}>Testing Speed</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }}>
-                <View>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                    <MaterialCommunityIcons name="flask-outline" size={16} color={theme.error} style={{ marginRight: 6 }} />
-                    <Text style={{ ...Type.subheadline, color: theme.label2 }}>Traditional Lab</Text>
-                  </View>
-                  <Text style={{ ...Type.title3, color: theme.error }}>14 days wait</Text>
-                </View>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                    <Text style={{ ...Type.subheadline, color: theme.label1 }}>Saathi AI</Text>
-                    <Feather name="cpu" size={16} color={theme.success} style={{ marginLeft: 6 }} />
-                  </View>
-                  <Text style={{ ...Type.title3, color: theme.success }}>{'< 60 seconds'}</Text>
-                </View>
+        <GlassCard style={{ padding: 21, marginBottom: 28, ...Shadows.md }}>
+          <Text style={{ ...Type.title3, color: theme.label1, marginBottom: 17 }}>Testing Speed</Text>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 20 }}>
+            <View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <MaterialCommunityIcons name="flask-outline" size={16} color={theme.error} style={{ marginRight: 6 }} />
+                <Text style={{ ...Type.subheadline, color: theme.label2 }}>Traditional Lab</Text>
               </View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
-                <Text style={{ ...Type.caption2, color: theme.label3 }}>EFFICIENCY</Text>
-                <Text style={{ ...Type.caption2, color: theme.success }}>336X FASTER</Text>
+              <Text style={{ ...Type.title3, color: theme.error }}>14 days wait</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+                <Text style={{ ...Type.subheadline, color: theme.label1 }}>Saathi AI</Text>
+                <Feather name="cpu" size={16} color={theme.success} style={{ marginLeft: 6 }} />
               </View>
-              <View style={{ height: 8, backgroundColor: theme.sep2, borderRadius: 4, overflow: 'hidden' }}>
-                <LinearGradient colors={isDark ? ['#065f46', theme.success] : ['#A7F3D0', theme.success]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: '98%', height: '100%', borderRadius: 4 }} />
-              </View>
-            </GlassCard>
+              <Text style={{ ...Type.title3, color: theme.success }}>{'< 60 seconds'}</Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+            <Text style={{ ...Type.caption2, color: theme.label3 }}>EFFICIENCY</Text>
+            <Text style={{ ...Type.caption2, color: theme.success }}>336X FASTER</Text>
+          </View>
+          <View style={{ height: 8, backgroundColor: theme.sep2, borderRadius: 4, overflow: 'hidden' }}>
+            <LinearGradient colors={isDark ? ['#065f46', theme.success] : ['#A7F3D0', theme.success]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ width: '98%', height: '100%', borderRadius: 4 }} />
+          </View>
+        </GlassCard>
 
-        <SectionHeader title="Saathi Features" />
+        <SectionHeader title={t('dashboard.features.title')} />
         <GlassCard style={{ marginBottom: 32, paddingVertical: 8, ...Shadows.md }}>
           {FEATURES.map((f, i) => (
             <View key={i}>
@@ -672,74 +736,71 @@ export default function DashboardScreen() {
             💚 From Mitti AI
           </Text>
         </View>
-        </>
-        )}
       </ScrollView>
 
       {selectedFeature && (
         <View style={StyleSheet.absoluteFill}>
-          <AnimatedReanimated.View style={[s.popupOverlay, popupOverlayAnimatedStyle]}>
+          <Animated.View style={[s.popupOverlay, { opacity: popupFade }]}>
             <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={hidePopup} />
-          </AnimatedReanimated.View>
-          <AnimatedReanimated.View style={[s.popupContainer, popupCardAnimatedStyle]}>
-            <GestureHandlerRootView style={{ flex: 1 }}>
-              <View style={[s.popupCard, { backgroundColor: theme.modalBackground }]}>
-                {/* 1. Frosted Sticky top header area, drag-sensitive to close */}
-                <PanGestureHandler
-                  onGestureEvent={onPopupPanGesture}
-                  onHandlerStateChange={onPopupPanStateChange}
-                >
-                  <AnimatedReanimated.View style={[s.popupStickyHeader, { borderBottomColor: theme.sep2 }]}>
-                    {/* Top drag handle indicator */}
-                    <View style={[s.popupHandle, { backgroundColor: theme.popupHandle }]} />
-                    
-                    {/* Frosted premium backdrop blur */}
-                    <BlurView intensity={isDark ? 30 : 50} tint={isDark ? "dark" : "light"} style={StyleSheet.absoluteFillObject} />
-                    
-                    {/* Fixed Icon + Title Area Layout */}
-                    <View style={s.popupHeaderContent}>
-                      <View style={[s.popupIconBoxSticky, { backgroundColor: FEATURE_DETAILS[selectedFeature].color + '15' }]}>
-                        <MaterialCommunityIcons name={FEATURE_DETAILS[selectedFeature].icon as any} size={32} color={FEATURE_DETAILS[selectedFeature].color} />
-                      </View>
-                      <View style={s.popupHeaderText}>
-                        <Text style={[s.popupPopupTitle, { color: theme.label1 }]} numberOfLines={1}>
-                          {FEATURE_DETAILS[selectedFeature].title}
-                        </Text>
-                        <Text style={[s.popupTagline, { color: theme.featureGreen }]} numberOfLines={1}>
-                          {FEATURE_DETAILS[selectedFeature].tagline}
-                        </Text>
-                      </View>
-                    </View>
-                  </AnimatedReanimated.View>
-                </PanGestureHandler>
+          </Animated.View>
+          <Animated.View style={[s.popupContainer, { transform: [{ translateY: popupSlide }] }]}>
+            <View style={[s.popupCard, { backgroundColor: theme.modalBackground }]}>
+              {/* FIXED PREMIUM STICKY HEADER */}
+              <View style={[s.popupStickyHeader, { borderBottomColor: theme.sep1 }]}>
+                {/* Background Gradient & Blur for glassmorphic depth */}
+                <LinearGradient
+                  colors={FEATURE_DETAILS[selectedFeature].gradient}
+                  style={StyleSheet.absoluteFill}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                />
+                <BlurView intensity={isDark ? 20 : 55} tint={isDark ? 'dark' : 'light'} style={StyleSheet.absoluteFill} />
 
-                {/* 2. Independent Scrollable Description body (scrolls underneath frosted header) */}
-                <ScrollView 
-                  showsVerticalScrollIndicator={true} 
-                  bounces={true}
-                  style={s.popupScroll}
-                  contentContainerStyle={s.popupScrollContent}
+                {/* Close Cross Button Top-Right */}
+                <TouchableOpacity
+                  onPress={hidePopup}
+                  style={[
+                    s.popupCloseCross,
+                    { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)', borderColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)' }
+                  ]}
                 >
-                  <Text style={[s.popupContent, { color: theme.label2, fontFamily: 'MythicalDragon', fontSize: 16, lineHeight: 28 }]}>
-                    {FEATURE_DETAILS[selectedFeature].content}
-                  </Text>
-                  
-                  <View style={[s.popupResultBox, { backgroundColor: theme.bg0, borderColor: theme.sep2 }]}>
-                    <Text style={[s.popupResultLabel, { color: theme.primary }]}>KEY BENEFIT</Text>
-                    <Text style={[s.popupResultText, { color: theme.label1 }]}>
-                      {FEATURE_DETAILS[selectedFeature].result}
-                    </Text>
+                  <Feather name="x" size={18} color={theme.label2} />
+                </TouchableOpacity>
+
+                {/* Drag Handle representation inside header */}
+                <View style={[s.popupHandle, { backgroundColor: theme.popupHandle, position: 'relative', marginTop: 4, marginBottom: 12 }]} />
+
+                {/* Header Content */}
+                <View style={{ alignItems: 'center', paddingHorizontal: 24, paddingBottom: 16 }}>
+                  <View style={[s.popupIconBox, { backgroundColor: FEATURE_DETAILS[selectedFeature].color + '18', borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.06)' }]}>
+                    <MaterialCommunityIcons name={FEATURE_DETAILS[selectedFeature].icon as any} size={32} color={FEATURE_DETAILS[selectedFeature].color} />
                   </View>
-                  
-                  <TouchableOpacity onPress={hidePopup} style={s.popupCloseBtn} activeOpacity={0.8}>
-                    <LinearGradient colors={[theme.primary, theme.primaryDark]} style={s.popupCloseGradient}>
-                      <Text style={s.popupCloseText}>Got it, thanks!</Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
-                </ScrollView>
+                  <Text style={[s.popupPopupTitle, { color: theme.label1, marginTop: 12, fontSize: 24, fontFamily: 'Sora_700Bold' }]}>
+                    {FEATURE_DETAILS[selectedFeature].title}
+                  </Text>
+                  <Text style={[s.popupTagline, { color: theme.featureGreen || FEATURE_DETAILS[selectedFeature].color, fontSize: 13, fontFamily: 'Sora_600SemiBold', marginTop: 3 }]}>
+                    {FEATURE_DETAILS[selectedFeature].tagline}
+                  </Text>
+                </View>
               </View>
-            </GestureHandlerRootView>
-          </AnimatedReanimated.View>
+
+              {/* SCROLLING BODY CONTENT */}
+              <ScrollView showsVerticalScrollIndicator={false} bounces={true} contentContainerStyle={s.popupScrollBody}>
+                <Text style={[s.popupContent, { color: theme.label2, fontFamily: 'MythicalDragon', fontSize: 16, lineHeight: 28 }]}>
+                  {FEATURE_DETAILS[selectedFeature].content}
+                </Text>
+                <View style={[s.popupResultBox, { backgroundColor: theme.bg0, borderColor: theme.sep2 }]}>
+                  <Text style={[s.popupResultLabel, { color: theme.primary }]}>KEY BENEFIT</Text>
+                  <Text style={[s.popupResultText, { color: theme.label1 }]}>{FEATURE_DETAILS[selectedFeature].result}</Text>
+                </View>
+                <TouchableOpacity onPress={hidePopup} style={s.popupCloseBtn}>
+                  <LinearGradient colors={[theme.primary, theme.primaryDark]} style={s.popupCloseGradient}>
+                    <Text style={s.popupCloseText}>Got it, thanks!</Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </ScrollView>
+            </View>
+          </Animated.View>
         </View>
       )}
     </View>
@@ -873,50 +934,56 @@ const s = StyleSheet.create({
     zIndex: 10,
   },
   popupStickyHeader: {
-    paddingTop: 24,
-    paddingBottom: 16,
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
+    position: 'relative',
     overflow: 'hidden',
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    borderBottomWidth: 1,
+    paddingTop: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
   },
-  popupHeaderContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  popupIconBoxSticky: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+  popupCloseCross: {
+    position: 'absolute',
+    top: 14,
+    right: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    borderWidth: 1,
+    zIndex: 100,
   },
-  popupHeaderText: {
-    flex: 1,
-    justifyContent: 'center',
-  },
-  popupScroll: {
-    flexGrow: 1,
-  },
-  popupScrollContent: {
-    paddingHorizontal: 24,
+  popupScrollBody: {
+    padding: 24,
     paddingTop: 20,
     paddingBottom: Platform.OS === 'ios' ? 40 : 30,
   },
+  popupIconBox: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
   popupPopupTitle: {
-    ...Type.title2,
-    textAlign: 'left',
-    fontSize: 20,
-    lineHeight: 26,
+    ...Type.title1,
+    textAlign: 'center',
   },
   popupTagline: {
     ...Type.headline,
-    textAlign: 'left',
-    fontSize: 13,
-    marginTop: 2,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  popupDivider: {
+    height: 1,
+    marginVertical: 20,
+    width: '60%',
+    alignSelf: 'center',
   },
   popupContent: {
     ...Type.body,

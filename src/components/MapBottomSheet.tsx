@@ -4,7 +4,7 @@ import BottomSheet, { BottomSheetBackdrop } from '@gorhom/bottom-sheet';
 import { Spacing } from '../constants/Spacing';
 import { SoilTest } from '@/features/soil_analysis/services/soil';
 import { getPhColor } from './MapComponent';
-import { useTheme } from '@/context/ThemeContext';
+import { useDarkModeTheme } from '@/context/ThemeContext';
 
 interface SoilDetailsSheetProps {
   selectedTest: SoilTest | null;
@@ -13,7 +13,7 @@ interface SoilDetailsSheetProps {
 
 export default function SoilDetailsSheet({ selectedTest, onClose }: SoilDetailsSheetProps) {
   const bottomSheetRef = useRef<BottomSheet>(null);
-  const { theme } = useTheme();
+  const { theme } = useDarkModeTheme();
 
   // Variables
   const snapPoints = useMemo(() => ['45%'], []);

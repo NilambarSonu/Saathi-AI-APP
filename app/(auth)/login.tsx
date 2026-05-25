@@ -61,7 +61,7 @@ export default function LoginScreen() {
     setIsLoading(true);
     try {
       await login(usernameOrEmail.trim(), password);
-      await AsyncStorage.removeItem('saathi_ble_connect_intent');
+      AsyncStorage.removeItem('saathi_ble_connect_intent').catch(() => {});
       router.replace('/(app)');
     } catch (err: any) {
       const rawMessage = err?.message || '';

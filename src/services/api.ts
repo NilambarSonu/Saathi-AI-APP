@@ -52,38 +52,63 @@ async function removeKeys(
 }
 
 export async function getStoredAccessToken(): Promise<string | null> {
-  const secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
-  if (secureToken) return secureToken;
+  try {
+    const secureToken = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (secureToken) return secureToken;
+  } catch (e) {
+    if (__DEV__) console.warn('[Storage] SecureStore read failed for access token:', e);
+  }
 
-  const asyncToken = await AsyncStorage.getItem(TOKEN_KEY);
-  if (asyncToken) return asyncToken;
+  try {
+    const asyncToken = await AsyncStorage.getItem(TOKEN_KEY);
+    if (asyncToken) return asyncToken;
+  } catch (e) {
+    if (__DEV__) console.error('[Storage] AsyncStorage read failed for access token:', e);
+  }
 
   for (const key of LEGACY_TOKEN_KEYS) {
-    const legacySecureToken = await SecureStore.getItemAsync(key);
-    if (legacySecureToken) return legacySecureToken;
+    try {
+      const legacySecureToken = await SecureStore.getItemAsync(key);
+      if (legacySecureToken) return legacySecureToken;
+    } catch { /* ignore */ }
 
-    const legacyAsyncToken = await AsyncStorage.getItem(key);
-    if (legacyAsyncToken) return legacyAsyncToken;
+    try {
+      const legacyAsyncToken = await AsyncStorage.getItem(key);
+      if (legacyAsyncToken) return legacyAsyncToken;
+    } catch { /* ignore */ }
   }
 
   return null;
 }
 
 export async function getStoredRefreshToken(): Promise<string | null> {
-  const secureRefresh = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
-  if (secureRefresh) return secureRefresh;
-  return AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  try {
+    const secureRefresh = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
+    if (secureRefresh) return secureRefresh;
+  } catch (e) {
+    if (__DEV__) console.warn('[Storage] SecureStore read failed for refresh token:', e);
+  }
+  
+  try {
+    return await AsyncStorage.getItem(REFRESH_TOKEN_KEY);
+  } catch (e) {
+    return null;
+  }
 }
 
 export async function getStoredUserId(): Promise<string | null> {
   for (const key of USER_ID_KEYS) {
-    const secureValue = await SecureStore.getItemAsync(key);
-    if (secureValue) return secureValue;
+    try {
+      const secureValue = await SecureStore.getItemAsync(key);
+      if (secureValue) return secureValue;
+    } catch { /* ignore */ }
   }
 
   for (const key of USER_ID_KEYS) {
-    const asyncValue = await AsyncStorage.getItem(key);
-    if (asyncValue) return asyncValue;
+    try {
+      const asyncValue = await AsyncStorage.getItem(key);
+      if (asyncValue) return asyncValue;
+    } catch { /* ignore */ }
   }
 
   return null;
@@ -94,24 +119,36 @@ export async function saveAuthTokens(token: string, refreshToken?: string): Prom
     throw new Error('INVALID_AUTH_TOKEN');
   }
 
-  await removeKeys(
-    {
-      removeItem: (key) => SecureStore.deleteItemAsync(key),
-    },
-    LEGACY_TOKEN_KEYS
-  );
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
-
-  await AsyncStorage.setItem(TOKEN_KEY, token);
-  await Promise.all(LEGACY_TOKEN_KEYS.map((key) => AsyncStorage.removeItem(key)));
-
-  if (refreshToken) {
-    if (typeof refreshToken !== 'string') {
-      throw new Error('INVALID_REFRESH_TOKEN');
+  // 1. ALWAYS write to AsyncStorage FIRST (extremely fast and Keystore-immune)
+  try {
+    await AsyncStorage.setItem(TOKEN_KEY, token);
+    await Promise.all(LEGACY_TOKEN_KEYS.map((key) => AsyncStorage.removeItem(key)));
+    if (refreshToken) {
+      if (typeof refreshToken !== 'string') {
+        throw new Error('INVALID_REFRESH_TOKEN');
+      }
+      await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
     }
-    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
-    await AsyncStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+  } catch (err) {
+    if (__DEV__) console.error('[Storage] AsyncStorage write failed:', err);
   }
+
+  // 2. Try SecureStore as a secure double-write, but ignore Keystore exceptions gracefully
+  try {
+    await removeKeys(
+      {
+        removeItem: (key) => SecureStore.deleteItemAsync(key),
+      },
+      LEGACY_TOKEN_KEYS
+    ).catch(() => {});
+    await SecureStore.setItemAsync(TOKEN_KEY, token);
+    if (refreshToken) {
+      await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, refreshToken);
+    }
+  } catch (err) {
+    if (__DEV__) console.warn('[Storage] SecureStore write failed (relying on AsyncStorage):', err);
+  }
+
   invalidateCache();
 }
 

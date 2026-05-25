@@ -4,7 +4,7 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from "react";
-import { Dimensions, StyleSheet } from "react-native";
+import { Dimensions, StyleSheet, View } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -50,6 +50,30 @@ const SwipeContainer = forwardRef<SwipeContainerHandle, SwipeContainerProps>(
     useEffect(() => {
       onIndexChangeRef.current = onIndexChange;
     }, [onIndexChange]);
+
+    // ── Visited state for lazy rendering (Current & Neighbors) ───────────────
+    const [visited, setVisited] = React.useState<boolean[]>(() => {
+      const arr = new Array(screens.length).fill(false);
+      arr[initialIndex] = true;
+      if (initialIndex > 0) arr[initialIndex - 1] = true;
+      if (initialIndex < screens.length - 1) arr[initialIndex + 1] = true;
+      return arr;
+    });
+
+    useEffect(() => {
+      setVisited((prev) => {
+        let changed = false;
+        const copy = [...prev];
+        const indices = [initialIndex, initialIndex - 1, initialIndex + 1];
+        for (const idx of indices) {
+          if (idx >= 0 && idx < screens.length && !copy[idx]) {
+            copy[idx] = true;
+            changed = true;
+          }
+        }
+        return changed ? copy : prev;
+      });
+    }, [initialIndex, screens.length]);
 
     // ── React to prop changes (External navigation) ────────────────────────
     useEffect(() => {
@@ -141,7 +165,7 @@ const SwipeContainer = forwardRef<SwipeContainerHandle, SwipeContainerProps>(
         >
           {screens.map((ScreenComponent, index) => (
             <ScreenSlide key={index} index={index} translateX={translateX}>
-              <ScreenComponent />
+              {visited[index] ? <ScreenComponent /> : <View style={{ flex: 1 }} />}
             </ScreenSlide>
           ))}
         </Animated.View>

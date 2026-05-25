@@ -11,7 +11,7 @@ import Animated, {
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
-import { useTheme } from '@/context/ThemeContext';
+import { useDarkModeTheme } from '@/context/ThemeContext';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -39,7 +39,7 @@ export default function LiquidGlassTabBar({
   onTabPress,
 }: LiquidGlassTabBarProps) {
   const insets = useSafeAreaInsets();
-  const { theme, isDark } = useTheme();
+  const { theme, isDark } = useDarkModeTheme();
   const activeIndex = Math.max(0, TABS.findIndex(t => t.key === activeTab));
 
   // Animated X position of the sliding indicator
@@ -115,7 +115,7 @@ function TabItem({
   isActive: boolean;
   onPress: () => void;
 }) {
-  const { theme } = useTheme();
+  const { theme } = useDarkModeTheme();
   const scale = useSharedValue(1);
   const opacity = useSharedValue(isActive ? 1 : 0.45);
 

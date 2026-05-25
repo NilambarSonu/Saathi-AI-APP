@@ -2,8 +2,11 @@ import React, { useMemo, useState, useEffect } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   Image,
   Linking,
+  Platform,
+  Pressable,
   Platform,
   ScrollView,
   StatusBar,
@@ -18,6 +21,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDarkModeTheme } from '@/context/ThemeContext';
+import { useTranslation } from '@/context/LanguageContext';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -31,253 +35,180 @@ type FeatureItem = {
   tint: string;
 };
 
-const FEATURE_ITEMS: Omit<FeatureItem, 'tint'>[] = [
-  {
-    icon: 'leaf-outline',
-    title: 'Instant Soil Analysis',
-    body: 'Understand pH, NPK, moisture, EC and temperature without waiting for lab reports.',
-    color: '#10B981',
-  },
-  {
-    icon: 'sparkles-outline',
-    title: 'AI Farming Guidance',
-    body: 'Get crop, fertilizer and care recommendations tailored to your field conditions.',
-    color: '#8B5CF6',
-  },
-  {
-    icon: 'map-outline',
-    title: 'Smart Field Mapping',
-    body: 'Track soil health across farms with location-aware history and field insights.',
-    color: '#3B82F6',
-  },
-  {
-    icon: 'chatbubble-ellipses-outline',
-    title: 'Local Language Support',
-    body: 'Designed for farmers who prefer simple guidance in familiar languages.',
-    color: '#F59E0B',
-  },
-  {
-    icon: 'hardware-chip-outline',
-    title: 'Agni Device Integration',
-    body: 'Connect the soil scanner and turn sensor readings into clear next steps.',
-    color: '#EF4444',
-  },
-  {
-    icon: 'bar-chart-outline',
-    title: 'Smart Recommendations',
-    body: 'Convert raw soil data into practical plans for better yield and lower waste.',
-    color: '#0EA5E9',
-  },
-];
 
-const IMPACT_ITEMS = [
-  { value: '< 60s', label: 'soil scan insight', icon: 'timer-outline' as IconName, color: '#10B981' },
-  { value: '10+', label: 'local language ready', icon: 'language-outline' as IconName, color: '#3B82F6' },
-  { value: '336x', label: 'faster than lab wait', icon: 'flash-outline' as IconName, color: '#F59E0B' },
-  { value: 'AI', label: 'recommendation engine', icon: 'sparkles-outline' as IconName, color: '#8B5CF6' },
-];
-
-const TECH_ITEMS = [
-  {
-    title: 'AI Powered',
-    body: 'Soil-aware intelligence for personalized farm decisions.',
-    icon: 'hardware-chip-outline' as IconName,
-    color: '#8B5CF6',
-    capsuleColors: ['#8B5CF6', '#5B21B6'] as [string, string],
-    gradientDark: ['rgba(139, 92, 246, 0.12)', 'rgba(139, 92, 246, 0.03)'] as [string, string],
-    gradientLight: ['rgba(250, 248, 255, 0.95)', 'rgba(243, 239, 254, 0.85)'] as [string, string],
-    borderColorDark: 'rgba(139, 92, 246, 0.20)',
-    borderColorLight: 'rgba(139, 92, 246, 0.10)',
-  },
-  {
-    title: 'Smart Sensors',
-    body: 'Agni scanner reads core soil signals in the field.',
-    icon: 'radio-outline' as IconName,
-    color: '#10B981',
-    capsuleColors: ['#10B981', '#06B6D4'] as [string, string],
-    gradientDark: ['rgba(16, 185, 129, 0.12)', 'rgba(16, 185, 129, 0.03)'] as [string, string],
-    gradientLight: ['rgba(244, 254, 248, 0.95)', 'rgba(230, 252, 238, 0.85)'] as [string, string],
-    borderColorDark: 'rgba(16, 185, 129, 0.20)',
-    borderColorLight: 'rgba(16, 185, 129, 0.10)',
-  },
-  {
-    title: 'Cloud Analytics',
-    body: 'History, insights and recommendations stay connected.',
-    icon: 'cloud-outline' as IconName,
-    color: '#3B82F6',
-    capsuleColors: ['#3B82F6', '#1D4ED8'] as [string, string],
-    gradientDark: ['rgba(59, 130, 246, 0.12)', 'rgba(59, 130, 246, 0.03)'] as [string, string],
-    gradientLight: ['rgba(244, 249, 255, 0.95)', 'rgba(230, 241, 254, 0.85)'] as [string, string],
-    borderColorDark: 'rgba(59, 130, 246, 0.20)',
-    borderColorLight: 'rgba(59, 130, 246, 0.10)',
-  },
-  {
-    title: 'Real-time Processing',
-    body: 'Guidance is generated when the farmer needs it.',
-    icon: 'pulse-outline' as IconName,
-    color: '#F97316',
-    capsuleColors: ['#F97316', '#F59E0B'] as [string, string],
-    gradientDark: ['rgba(249, 115, 22, 0.12)', 'rgba(249, 115, 22, 0.03)'] as [string, string],
-    gradientLight: ['rgba(255, 250, 244, 0.95)', 'rgba(255, 242, 225, 0.85)'] as [string, string],
-    borderColorDark: 'rgba(249, 115, 22, 0.20)',
-    borderColorLight: 'rgba(249, 115, 22, 0.10)',
-  },
-];
-
-const DEVICE_POINTS = [
-  'NPK, pH, EC, moisture and temperature readings',
-  'Bluetooth workflow for rural field usage',
-  'AI converts readings into farmer-friendly advice',
-];
-
-const TEAM_ITEMS = [
-  {
-    name: 'Nilambar Behera',
-    role: 'Founder & Lead Architect (IoT & AI LLM)',
-    college: 'Bhadrak Autonomous College, BCA',
-    image: require('../../assets/images/founder.png'),
-    accent: '#38BDF8',
-    gradientDark: ['rgba(56, 189, 248, 0.20)', 'rgba(16, 22, 17, 0.90)', 'rgba(8, 47, 73, 0.35)'] as [string, string, string],
-    gradientLight: ['rgba(224, 242, 254, 0.75)', 'rgba(255, 255, 255, 0.94)', 'rgba(186, 230, 253, 0.40)'] as [string, string, string],
-    borderDark: ['#00F2FE', '#8B5CF6', '#00F2FE'] as [string, string, string],
-    borderLight: ['#38BDF8', '#A855F7', '#38BDF8'] as [string, string, string],
-  },
-  {
-    name: 'Sanatan Sethi',
-    role: 'Co-Founder & Mobile App Developer',
-    college: 'Bhadrak Autonomous College, BCA',
-    image: require('../../assets/images/co-founder.png'),
-    accent: '#22C55E',
-    gradientDark: ['rgba(34, 197, 94, 0.18)', 'rgba(16, 22, 17, 0.90)', 'rgba(6, 78, 59, 0.35)'] as [string, string, string],
-    gradientLight: ['rgba(220, 252, 231, 0.75)', 'rgba(255, 255, 255, 0.94)', 'rgba(187, 247, 208, 0.40)'] as [string, string, string],
-    borderDark: ['#10B981', '#A3E635', '#10B981'] as [string, string, string],
-    borderLight: ['#22C55E', '#84CC16', '#22C55E'] as [string, string, string],
-  },
-];
-
-const TESTIMONIALS = [
-  {
-    name: 'Mahendra Behera',
-    initials: 'MB',
-    subtitle: 'Soro Village, Balasore',
-    review: 'I did not believe a phone app could understand my soil. But the instant Odia advice showed me why my paddy leaves turned yellow. Our yield was the healthiest in five years.',
-    icon: 'leaf-outline' as IconName,
-    color: '#10B981',
-    gradientDark: ['rgba(20, 36, 26, 0.85)', 'rgba(16, 22, 17, 0.95)'] as [string, string],
-    gradientLight: ['#F3F9F5', '#FCFAF5'] as [string, string],
-    borderColorDark: 'rgba(16, 185, 129, 0.22)',
-    borderColorLight: 'rgba(16, 185, 129, 0.12)',
-  },
-  {
-    name: 'Ramamani Behera',
-    initials: 'RB',
-    subtitle: 'Niali Village, Cuttack',
-    review: 'We used to wait two weeks for soil reports from the city. Now, with the scanner, we get recommendations immediately. It feels like having an agricultural expert in our pockets.',
-    icon: 'sunny-outline' as IconName,
-    color: '#D97706',
-    gradientDark: ['rgba(40, 28, 16, 0.85)', 'rgba(22, 18, 14, 0.95)'] as [string, string],
-    gradientLight: ['#FCF7EE', '#FCFAF5'] as [string, string],
-    borderColorDark: 'rgba(217, 119, 6, 0.22)',
-    borderColorLight: 'rgba(217, 119, 6, 0.12)',
-  },
-];
-
-const TRANSLATIONS: Record<string, Record<string, string>> = {
-  en: {
-    fullName: "Full Name",
-    emailAddress: "Email Address",
-    message: "Message",
-    enterName: "Enter your name",
-    enterEmail: "Enter your email",
-    enterMessage: "Enter your message",
-    sendButton: "Send Message",
-    sending: "Sending...",
-    success: "Message sent successfully!",
-    error: "Failed to send message",
-    missingFields: "Missing Fields",
-    fillAllFields: "Please fill all fields before sending.",
-    invalidEmail: "Invalid Email",
-    enterValidEmail: "Please enter a valid email address.",
-    nameTooLong: "Name is too long (max 100 characters).",
-    emailTooLong: "Email is too long (max 255 characters).",
-    messageTooLong: "Message is too long (max 5000 characters).",
-  },
-  hi: {
-    fullName: "पूरा नाम",
-    emailAddress: "ईमेल पता",
-    message: "संदेश",
-    enterName: "अपना नाम दर्ज करें",
-    enterEmail: "अपना ईमेल दर्ज करें",
-    enterMessage: "अपना संदेश दर्ज करें",
-    sendButton: "संदेश भेजें",
-    sending: "भेजा जा रहा है...",
-    success: "संदेश सफलतापूर्वक भेजा गया!",
-    error: "संदेश भेजने में विफल",
-    missingFields: "अधूरे फ़ील्ड",
-    fillAllFields: "कृपया भेजने से पहले सभी फ़ील्ड भरें।",
-    invalidEmail: "अमान्य ईमेल",
-    enterValidEmail: "कृपया एक मान्य ईमेल पता दर्ज करें।",
-    nameTooLong: "नाम बहुत लंबा है (अधिकतम 100 वर्ण)।",
-    emailTooLong: "ईमेल बहुत लंबा है (अधिकतम 255 वर्ण)।",
-    messageTooLong: "संदेश बहुत लंबा है (अधिकतम 5000 वर्ण)।",
-  },
-  od: {
-    fullName: "ସମ୍ପୂର୍ଣ ନାମ",
-    emailAddress: "ଇମେଲ ଠିକାଣା",
-    message: "ବାର୍ତ୍ତା",
-    enterName: "ଆପଣଙ୍କ ନାମ ଦର୍ଜ କରନ୍ତୁ",
-    enterEmail: "ଆପଣଙ୍କ ଇମେଲ ଦର୍ଜ କରନ୍ତୁ",
-    enterMessage: "ଆପଣଙ୍କ ବାର୍ତ୍ତା ଦର୍ଜ କରନ୍ତୁ",
-    sendButton: "ବାର୍ତ୍ତା ପଠାନ୍ତୁ",
-    sending: "ପଠାଯାଉଛି...",
-    success: "ବାର୍ତ୍ତା ସଫଳତାପୂର୍ବକ ପଠାଗଲା!",
-    error: "ବାର୍ତ୍ତା ପଠାଇବାରେ ବିଫଳ ହେଲା",
-    missingFields: "ଅସମ୍ପୂର୍ଣ୍ଣ ତଥ୍ୟ",
-    fillAllFields: "ଦୟାକରି ପଠାଇବା ପୂର୍ବରୁ ସମସ୍ତ ବିବରଣୀ ପୂରଣ କରନ୍ତୁ ।",
-    invalidEmail: "ଅମାନ୍ୟ ଇମେଲ",
-    enterValidEmail: "ଦୟାକରି ଏକ ବୈଧ ଇମେଲ ଠିକାଣା ପ୍ରବେଶ କରନ୍ତୁ ।",
-    nameTooLong: "ନାମ ବହୁତ ବଡ଼ ଅଟେ (ସର୍ବାଧିକ ୧୦୦ ଅକ୍ଷର) ।",
-    emailTooLong: "ଇମେଲ ବହୁତ ବଡ଼ ଅଟେ (ସର୍ବାଧିକ ୨୫୫ ଅକ୍ଷର) ।",
-    messageTooLong: "ବାର୍ତ୍ତା ବହୁତ ବଡ଼ ଅଟେ (ସର୍ବାଧିକ ୫୦୦୦ ଅକ୍ଷର) ।",
-  }
-};
 
 export default function AboutScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { theme, isDark } = useDarkModeTheme();
+  const { t } = useTranslation();
+
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
-  const [lang, setLang] = useState('en');
+  const [sendSuccess, setSendSuccess] = useState(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem('saathi_settings').then(val => {
-      if (val) {
-        try {
-          const parsed = JSON.parse(val);
-          if (parsed.language) {
-            setLang(parsed.language);
-          }
-        } catch {}
-      }
-    });
-  }, []);
+  const featureItems = useMemo(() => {
+    const rawFeatures = [
+      {
+        icon: 'leaf-outline' as IconName,
+        title: t('about.ecosystem.features.soilAnalysis.title'),
+        body: t('about.ecosystem.features.soilAnalysis.body'),
+        color: '#10B981',
+      },
+      {
+        icon: 'sparkles-outline' as IconName,
+        title: t('about.ecosystem.features.aiGuidance.title'),
+        body: t('about.ecosystem.features.aiGuidance.body'),
+        color: '#8B5CF6',
+      },
+      {
+        icon: 'map-outline' as IconName,
+        title: t('about.ecosystem.features.fieldMapping.title'),
+        body: t('about.ecosystem.features.fieldMapping.body'),
+        color: '#3B82F6',
+      },
+      {
+        icon: 'chatbubble-ellipses-outline' as IconName,
+        title: t('about.ecosystem.features.langSupport.title'),
+        body: t('about.ecosystem.features.langSupport.body'),
+        color: '#F59E0B',
+      },
+      {
+        icon: 'hardware-chip-outline' as IconName,
+        title: t('about.ecosystem.features.deviceIntegration.title'),
+        body: t('about.ecosystem.features.deviceIntegration.body'),
+        color: '#EF4444',
+      },
+      {
+        icon: 'bar-chart-outline' as IconName,
+        title: t('about.ecosystem.features.smartRecommendations.title'),
+        body: t('about.ecosystem.features.smartRecommendations.body'),
+        color: '#0EA5E9',
+      },
+    ];
+    return rawFeatures.map(item => ({
+      ...item,
+      tint: isDark ? `${item.color}24` : `${item.color}14`,
+    }));
+  }, [t, isDark]);
 
-  const t = (key: string): string => {
-    const currentLang = TRANSLATIONS[lang] ? lang : 'en';
-    return TRANSLATIONS[currentLang]?.[key] || TRANSLATIONS['en']?.[key] || key;
-  };
+  const impactItems = useMemo(() => [
+    { value: '< 60s', label: t('about.impact.insight'), icon: 'timer-outline' as IconName, color: '#10B981' },
+    { value: '10+', label: t('about.impact.langReady'), icon: 'language-outline' as IconName, color: '#3B82F6' },
+    { value: '336x', label: t('about.impact.labWait'), icon: 'flash-outline' as IconName, color: '#F59E0B' },
+    { value: 'AI', label: t('about.impact.recEngine'), icon: 'sparkles-outline' as IconName, color: '#8B5CF6' },
+  ], [t]);
 
-  const featureItems = useMemo(
-    () => FEATURE_ITEMS.map(item => ({ ...item, tint: isDark ? `${item.color}24` : `${item.color}14` })),
-    [isDark]
-  );
+  const techItems = useMemo(() => [
+    {
+      title: t('about.stack.items.aiPowered.title'),
+      body: t('about.stack.items.aiPowered.body'),
+      icon: 'hardware-chip-outline' as IconName,
+      color: '#8B5CF6',
+      capsuleColors: ['#8B5CF6', '#5B21B6'] as [string, string],
+      gradientDark: ['rgba(139, 92, 246, 0.12)', 'rgba(139, 92, 246, 0.03)'] as [string, string],
+      gradientLight: ['rgba(250, 248, 255, 0.95)', 'rgba(243, 239, 254, 0.85)'] as [string, string],
+      borderColorDark: 'rgba(139, 92, 246, 0.20)',
+      borderColorLight: 'rgba(139, 92, 246, 0.10)',
+    },
+    {
+      title: t('about.stack.items.smartSensors.title'),
+      body: t('about.stack.items.smartSensors.body'),
+      icon: 'radio-outline' as IconName,
+      color: '#10B981',
+      capsuleColors: ['#10B981', '#06B6D4'] as [string, string],
+      gradientDark: ['rgba(16, 185, 129, 0.12)', 'rgba(16, 185, 129, 0.03)'] as [string, string],
+      gradientLight: ['rgba(244, 254, 248, 0.95)', 'rgba(230, 252, 238, 0.85)'] as [string, string],
+      borderColorDark: 'rgba(16, 185, 129, 0.20)',
+      borderColorLight: 'rgba(16, 185, 129, 0.10)',
+    },
+    {
+      title: t('about.stack.items.cloudAnalytics.title'),
+      body: t('about.stack.items.cloudAnalytics.body'),
+      icon: 'cloud-outline' as IconName,
+      color: '#3B82F6',
+      capsuleColors: ['#3B82F6', '#1D4ED8'] as [string, string],
+      gradientDark: ['rgba(59, 130, 246, 0.12)', 'rgba(59, 130, 246, 0.03)'] as [string, string],
+      gradientLight: ['rgba(244, 249, 255, 0.95)', 'rgba(230, 241, 254, 0.85)'] as [string, string],
+      borderColorDark: 'rgba(59, 130, 246, 0.20)',
+      borderColorLight: 'rgba(59, 130, 246, 0.10)',
+    },
+    {
+      title: t('about.stack.items.realtime.title'),
+      body: t('about.stack.items.realtime.body'),
+      icon: 'pulse-outline' as IconName,
+      color: '#F97316',
+      capsuleColors: ['#F97316', '#F59E0B'] as [string, string],
+      gradientDark: ['rgba(249, 115, 22, 0.12)', 'rgba(249, 115, 22, 0.03)'] as [string, string],
+      gradientLight: ['rgba(255, 250, 244, 0.95)', 'rgba(255, 242, 225, 0.85)'] as [string, string],
+      borderColorDark: 'rgba(249, 115, 22, 0.20)',
+      borderColorLight: 'rgba(249, 115, 22, 0.10)',
+    },
+  ], [t]);
+
+  const devicePoints = useMemo(() => [
+    t('about.scanner.points.0'),
+    t('about.scanner.points.1'),
+    t('about.scanner.points.2'),
+  ], [t]);
+
+  const teamItems = useMemo(() => [
+    {
+      name: t('about.community.team.nilambar.name'),
+      role: t('about.community.team.nilambar.role'),
+      college: t('about.community.team.nilambar.college'),
+      image: require('../../assets/images/founder.png'),
+      accent: '#38BDF8',
+      gradientDark: ['rgba(56, 189, 248, 0.20)', 'rgba(16, 22, 17, 0.90)', 'rgba(8, 47, 73, 0.35)'] as [string, string, string],
+      gradientLight: ['rgba(224, 242, 254, 0.75)', 'rgba(255, 255, 255, 0.94)', 'rgba(186, 230, 253, 0.40)'] as [string, string, string],
+      borderDark: ['#00F2FE', '#8B5CF6', '#00F2FE'] as [string, string, string],
+      borderLight: ['#38BDF8', '#A855F7', '#38BDF8'] as [string, string, string],
+    },
+    {
+      name: t('about.community.team.sanatan.name'),
+      role: t('about.community.team.sanatan.role'),
+      college: t('about.community.team.sanatan.college'),
+      image: require('../../assets/images/co-founder.png'),
+      accent: '#22C55E',
+      gradientDark: ['rgba(34, 197, 94, 0.18)', 'rgba(16, 22, 17, 0.90)', 'rgba(6, 78, 59, 0.35)'] as [string, string, string],
+      gradientLight: ['rgba(220, 252, 231, 0.75)', 'rgba(255, 255, 255, 0.94)', 'rgba(187, 247, 208, 0.40)'] as [string, string, string],
+      borderDark: ['#10B981', '#A3E635', '#10B981'] as [string, string, string],
+      borderLight: ['#22C55E', '#84CC16', '#22C55E'] as [string, string, string],
+    },
+  ], [t]);
+
+  const testimonials = useMemo(() => [
+    {
+      name: t('about.community.testimonials.mahendra.name'),
+      initials: 'MB',
+      subtitle: t('about.community.testimonials.mahendra.subtitle'),
+      review: t('about.community.testimonials.mahendra.review'),
+      icon: 'leaf-outline' as IconName,
+      color: '#10B981',
+      gradientDark: ['rgba(20, 36, 26, 0.85)', 'rgba(16, 22, 17, 0.95)'] as [string, string],
+      gradientLight: ['#F3F9F5', '#FCFAF5'] as [string, string],
+      borderColorDark: 'rgba(16, 185, 129, 0.22)',
+      borderColorLight: 'rgba(16, 185, 129, 0.12)',
+    },
+    {
+      name: t('about.community.testimonials.ramamani.name'),
+      initials: 'RB',
+      subtitle: t('about.community.testimonials.ramamani.subtitle'),
+      review: t('about.community.testimonials.ramamani.review'),
+      icon: 'sunny-outline' as IconName,
+      color: '#D97706',
+      gradientDark: ['rgba(40, 28, 16, 0.85)', 'rgba(22, 18, 14, 0.95)'] as [string, string],
+      gradientLight: ['#FCF7EE', '#FCFAF5'] as [string, string],
+      borderColorDark: 'rgba(217, 119, 6, 0.22)',
+      borderColorLight: 'rgba(217, 119, 6, 0.12)',
+    },
+  ], [t]);
 
   const topPad = insets.top || (Platform.OS === 'android' ? (StatusBar.currentHeight ?? 24) : 0);
 
-  const handleSend = async () => {
+const handleSend = async () => {
     const trimmedName = fullName.trim();
     const trimmedEmail = email.trim();
     const trimmedMessage = message.trim();
@@ -325,10 +256,14 @@ export default function AboutScreen() {
       );
 
       if (response.status === 200 && response.data?.success) {
-        Alert.alert(t('success'), t('success'));
-        setFullName('');
-        setEmail('');
-        setMessage('');
+        setSending(false);
+        setSendSuccess(true);
+        setTimeout(() => {
+          setSendSuccess(false);
+          setFullName('');
+          setEmail('');
+          setMessage('');
+        }, 3000);
       } else {
         const errorMsg = response.data?.error || t('error');
         Alert.alert(t('error'), errorMsg);
@@ -346,6 +281,8 @@ export default function AboutScreen() {
     }
   };
 
+
+
   return (
     <View style={[styles.root, { backgroundColor: theme.background, paddingTop: topPad }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
@@ -354,8 +291,8 @@ export default function AboutScreen() {
           <Ionicons name="chevron-back" size={22} color={theme.primary} />
         </TouchableOpacity>
         <View style={styles.navBrand}>
-          <Image source={require('../../assets/images/favicon.png')} style={styles.navLogo} />
-          <Text style={[styles.navTitle, { color: theme.textPrimary }]}>Saathi AI</Text>
+          <Image source={require('../../assets/images/app-logo.png')} style={styles.navLogo} />
+          <Text style={[styles.navTitle, { color: theme.textPrimary }]}>{t('about.navTitle')}</Text>
         </View>
         <View style={{ width: 40 }} />
       </View>
@@ -388,22 +325,20 @@ export default function AboutScreen() {
                 borderWidth: isDark ? 1 : 0
               }
             ]}>
-              <Image source={require('../../assets/images/favicon.png')} style={styles.heroLogo} />
+              <Image source={require('../../assets/images/app-logo.png')} style={styles.heroLogo} />
             </View>
             <View style={[styles.heroChip, { backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.72)', borderColor: isDark ? theme.sep2 : 'rgba(255,255,255,0.9)' }]}>
               <Ionicons name="shield-checkmark-outline" size={14} color={isDark ? '#34D399' : theme.primary} />
-              <Text style={[styles.heroChipText, { color: theme.textPrimary }]}>Farmer-first agri intelligence</Text>
+              <Text style={[styles.heroChipText, { color: theme.textPrimary }]}>{t('about.hero.chipText')}</Text>
             </View>
           </View>
-          <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>Empowering Farmers with Organic Intelligence</Text>
-          <Text style={[styles.heroBody, { color: theme.textSecondary }]}>
-            Saathi AI brings soil testing, AI guidance and Agni device insights together so every farmer can make faster, confident decisions.
-          </Text>
+          <Text style={[styles.heroTitle, { color: theme.textPrimary }]}>{t('about.hero.title')}</Text>
+          <Text style={[styles.heroBody, { color: theme.textSecondary }]}>{t('about.hero.body')}</Text>
           <View style={styles.heroMiniRow}>
             {[
-              ['leaf-outline', 'Growth'],
-              ['sparkles-outline', 'AI'],
-              ['earth-outline', 'Rural Ready'],
+              ['leaf-outline', t('about.hero.growth')],
+              ['sparkles-outline', t('about.hero.ai')],
+              ['earth-outline', t('about.hero.ruralReady')],
             ].map(([icon, label]) => (
               <View
                 key={label}
@@ -423,17 +358,15 @@ export default function AboutScreen() {
           </View>
         </LinearGradient>
 
-        <SectionHeader eyebrow="01 / MISSION" title="Built to remove farming guesswork" theme={theme} />
+        <SectionHeader eyebrow={t('about.mission.eyebrow')} title={t('about.mission.title')} theme={theme} />
         <View style={[styles.missionCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
           <View style={[styles.missionIcon, { backgroundColor: theme.primaryLight }]}>
             <Ionicons name="heart-outline" size={24} color={theme.primary} />
           </View>
-          <Text style={[styles.missionTitle, { color: theme.textPrimary }]}>AI that respects soil, time and farmers.</Text>
-          <Text style={[styles.missionBody, { color: theme.textSecondary }]}>
-            Saathi AI exists to reduce long lab delays, make soil intelligence understandable, and help farmers improve productivity with practical recommendations that feel simple, local and trustworthy.
-          </Text>
+          <Text style={[styles.missionTitle, { color: theme.textPrimary }]}>{t('about.mission.cardTitle')}</Text>
+          <Text style={[styles.missionBody, { color: theme.textSecondary }]}>{t('about.mission.cardBody')}</Text>
           <View style={styles.keywordRow}>
-            {['Soil-first', 'Local', 'Fast', 'Human'].map(word => (
+            {[t('about.mission.keywords.soilFirst'), t('about.mission.keywords.local'), t('about.mission.keywords.fast'), t('about.mission.keywords.human')].map(word => (
               <View key={word} style={[styles.keywordPill, { backgroundColor: isDark ? theme.bg1 : theme.primaryLight }]}>
                 <Text style={[styles.keywordText, { color: theme.primary }]}>{word}</Text>
               </View>
@@ -441,7 +374,7 @@ export default function AboutScreen() {
           </View>
         </View>
 
-        <SectionHeader eyebrow="02 / ECOSYSTEM" title="A complete farm intelligence companion" theme={theme} />
+        <SectionHeader eyebrow={t('about.ecosystem.eyebrow')} title={t('about.ecosystem.title')} theme={theme} />
         <View style={styles.featureGrid}>
           {featureItems.map(item => (
             <View key={item.title} style={[styles.featureCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
@@ -465,16 +398,14 @@ export default function AboutScreen() {
           <View style={styles.deviceCopy}>
             <View style={[styles.deviceTag, { backgroundColor: isDark ? 'rgba(251,191,36,0.14)' : '#FEF3C7' }]}>
               <Ionicons name="flash-outline" size={14} color={theme.amber} />
-              <Text style={[styles.deviceTagText, { color: isDark ? '#FCD34D' : '#B45309' }]}>Real-time soil intelligence</Text>
+              <Text style={[styles.deviceTagText, { color: isDark ? '#FCD34D' : '#B45309' }]}>{t('about.scanner.tag')}</Text>
             </View>
-            <Text style={[styles.deviceTitle, { color: theme.textPrimary }]}>Agni Soil Scanner</Text>
-            <Text style={[styles.deviceBody, { color: theme.textSecondary }]}>
-              A portable field device that captures key soil signals and sends them into Saathi AI for clear, actionable guidance.
-            </Text>
+            <Text style={[styles.deviceTitle, { color: theme.textPrimary }]}>{t('about.scanner.title')}</Text>
+            <Text style={[styles.deviceBody, { color: theme.textSecondary }]}>{t('about.scanner.body')}</Text>
           </View>
           <Image source={require('../../assets/images/Agni_Device.png')} style={styles.deviceImage} resizeMode="contain" />
           <View style={styles.devicePoints}>
-            {DEVICE_POINTS.map(point => (
+            {devicePoints.map(point => (
               <View key={point} style={styles.devicePoint}>
                 <View style={[styles.devicePointIcon, { backgroundColor: theme.primaryLight }]}>
                   <Ionicons name="checkmark" size={13} color={theme.primary} />
@@ -488,7 +419,7 @@ export default function AboutScreen() {
         <View style={styles.sectionGap} />
 
         <View style={styles.impactGrid}>
-          {IMPACT_ITEMS.map(item => (
+          {impactItems.map(item => (
             <View key={item.label} style={[styles.impactCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
               <View style={[styles.impactIcon, { backgroundColor: `${item.color}${isDark ? '22' : '14'}` }]}>
                 <Ionicons name={item.icon} size={20} color={item.color} />
@@ -510,15 +441,13 @@ export default function AboutScreen() {
             <Ionicons name="chatbubbles-outline" size={30} color={theme.amber} />
             <Ionicons name="leaf-outline" size={34} color={theme.success} />
           </LinearGradient>
-          <Text style={[styles.farmerTitle, { color: theme.textPrimary }]}>Simple enough for every farmer. Powerful enough for every field.</Text>
-          <Text style={[styles.farmerBody, { color: theme.textSecondary }]}>
-            The experience is built for rural accessibility: simple words, clear next steps, local language support, offline-friendly device flows, and guidance that does not require technical knowledge.
-          </Text>
+          <Text style={[styles.farmerTitle, { color: theme.textPrimary }]}>{t('about.farmerCard.title')}</Text>
+          <Text style={[styles.farmerBody, { color: theme.textSecondary }]}>{t('about.farmerCard.body')}</Text>
         </View>
 
-        <SectionHeader eyebrow="03 / STACK" title="Modern stack, grounded in agriculture" theme={theme} />
+        <SectionHeader eyebrow={t('about.stack.eyebrow')} title={t('about.stack.title')} theme={theme} />
         <View style={styles.techGrid}>
-          {TECH_ITEMS.map(item => (
+          {techItems.map(item => (
             <LinearGradient
               key={item.title}
               colors={isDark ? item.gradientDark : item.gradientLight}
@@ -564,9 +493,9 @@ export default function AboutScreen() {
           ))}
         </View>
 
-        <SectionHeader eyebrow="04 / COMMUNITY" title="Grounded in trust, built by innovators" theme={theme} />
+        <SectionHeader eyebrow={t('about.community.eyebrow')} title={t('about.community.title')} theme={theme} />
         <View style={styles.testimonialWrap}>
-          {TESTIMONIALS.map(item => (
+          {testimonials.map(item => (
             <LinearGradient
               key={item.name}
               colors={isDark ? item.gradientDark : item.gradientLight}
@@ -623,7 +552,7 @@ export default function AboutScreen() {
                       <Ionicons key={star} name="star" size={11} color="#FBBF24" />
                     ))}
                   </View>
-                  <Text style={[styles.verifiedText, { color: theme.textMuted }]}>Verified Soil Scan</Text>
+                  <Text style={[styles.verifiedText, { color: theme.textMuted }]}>{t('about.community.testimonials.mahendra.verified')}</Text>
                 </View>
               </View>
 
@@ -639,11 +568,11 @@ export default function AboutScreen() {
 
         <View style={styles.buildersDivider}>
           <View style={[styles.subDividerLine, { backgroundColor: theme.sep2 }]} />
-          <Text style={[styles.buildersSubheading, { color: theme.textSecondary }]}>Meet the Builders</Text>
+          <Text style={[styles.buildersSubheading, { color: theme.textSecondary }]}>{t('about.community.meetBuilders')}</Text>
         </View>
 
         <View style={styles.teamWrap}>
-          {TEAM_ITEMS.map(member => (
+          {teamItems.map(member => (
             <TouchableOpacity key={member.name} activeOpacity={0.86} style={[styles.teamCardShadow, { shadowColor: member.accent }]}>
               {/* Outer Border Gradient Container */}
               <LinearGradient
@@ -695,9 +624,9 @@ export default function AboutScreen() {
           ))}
         </View>
 
-        <SectionHeader eyebrow="05 / CONNECT" title="Talk to the Saathi AI team" theme={theme} />
+        <SectionHeader eyebrow={t('about.connect.eyebrow')} title={t('about.connect.title')} theme={theme} />
         <View style={[styles.contactCard, { backgroundColor: theme.surface, borderColor: theme.cardBorder }]}>
-          <ContactRow icon="location-outline" color={theme.blue} text="FMU-TBI, Balasore, Odisha, India" theme={theme} />
+          <ContactRow icon="location-outline" color={theme.blue} text={t('about.connect.address')} theme={theme} />
           <TouchableOpacity onPress={() => Linking.openURL('tel:+917205095602')} activeOpacity={0.75}>
             <ContactRow icon="call-outline" color={theme.primary} text="+91 7205095602" theme={theme} />
           </TouchableOpacity>
@@ -730,23 +659,20 @@ export default function AboutScreen() {
             value={message}
             onChangeText={setMessage}
           />
-          <TouchableOpacity style={[styles.sendButton, { backgroundColor: theme.primary }]} onPress={handleSend} disabled={sending} activeOpacity={0.85}>
-            {sending ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <ActivityIndicator color="#FFFFFF" size="small" />
-                <Text style={styles.sendButtonText}>{t('sending')}</Text>
-              </View>
-            ) : (
-              <Text style={styles.sendButtonText}>{t('sendButton')}</Text>
-            )}
-          </TouchableOpacity>
+          <PremiumSendButton 
+            onPress={handleSend} 
+            sending={sending} 
+            success={sendSuccess}
+            text={t('sendButton')} 
+            theme={theme} 
+          />
         </View>
 
         <View style={[styles.footer, { borderColor: theme.cardBorder }]}>
-          <Image source={require('../../assets/images/favicon.png')} style={styles.footerLogo} />
-          <Text style={[styles.footerTitle, { color: theme.textPrimary }]}>Saathi AI</Text>
-          <Text style={[styles.footerText, { color: theme.textSecondary }]}>Version 1.0.0 - Built with care for Farmers</Text>
-          <Text style={[styles.footerText, { color: theme.textMuted }]}>Copyright 2026 Agni Innovations</Text>
+          <Image source={require('../../assets/images/app-logo.png')} style={styles.footerLogo} />
+          <Text style={[styles.footerTitle, { color: theme.textPrimary }]}>{t('about.navTitle')}</Text>
+          <Text style={[styles.footerText, { color: theme.textSecondary }]}>{t('about.footer.builtWithCare')}</Text>
+          <Text style={[styles.footerText, { color: theme.textMuted }]}>{t('about.footer.copyright')}</Text>
         </View>
       </ScrollView>
     </View>
@@ -1065,8 +991,101 @@ const styles = StyleSheet.create({
   testimonialSubtitle: {
     fontFamily: 'Sora_500Medium',
     fontSize: 10.5,
-    lineHeight: 14,
+    lineHeight: 20,
   },
+  premiumSendBtn: {
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  premiumSendContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+});
+
+function PremiumSendButton({ onPress, sending, success, disabled, text, theme }: any) {
+  const scale = React.useRef(new Animated.Value(1)).current;
+  const gradientTranslateX = React.useRef(new Animated.Value(-300)).current;
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (sending) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(gradientTranslateX, { toValue: 300, duration: 1200, useNativeDriver: true }),
+          Animated.timing(gradientTranslateX, { toValue: -300, duration: 0, useNativeDriver: true })
+        ])
+      ).start();
+    } else {
+      gradientTranslateX.setValue(-300);
+      gradientTranslateX.stopAnimation();
+    }
+  }, [sending]);
+
+  useEffect(() => {
+    if (success) {
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 300, useNativeDriver: true })
+      ]).start();
+    }
+  }, [success]);
+
+  const handlePressIn = () => {
+    if (!disabled && !sending && !success) {
+      Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
+    }
+  };
+  const handlePressOut = () => {
+    if (!disabled && !sending && !success) {
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 40 }).start();
+    }
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale: Animated.multiply(scale, pulseAnim) }], width: '100%', marginTop: 8 }}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled || sending || success}
+        style={[
+          styles.premiumSendBtn,
+          { backgroundColor: success ? theme.success || '#10B981' : theme.primary },
+          disabled && !sending && !success && { opacity: 0.6 }
+        ]}
+      >
+        <View style={styles.premiumSendContent}>
+          {success ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.sendButtonText}>Message Sent!</Text>
+            </View>
+          ) : sending ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.sendButtonText}>Sending...</Text>
+            </View>
+          ) : (
+            <Text style={styles.sendButtonText}>{text}</Text>
+          )}
+        </View>
+
+        {sending && (
+          <Animated.View style={[StyleSheet.absoluteFillObject, { transform: [{ translateX: gradientTranslateX }], opacity: 0.5 }]}>
+            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.3)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />
+          </Animated.View>
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
   starsContainer: {
     alignItems: 'flex-end',
     justifyContent: 'center',

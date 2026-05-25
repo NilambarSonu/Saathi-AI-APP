@@ -3,7 +3,7 @@ import { hideTabBar, showTabBar } from '@/constants/Animations';
 import {
   View, Text, StyleSheet, ScrollView, Pressable,
   TextInput, Alert, ActivityIndicator, Switch,
-  Platform, Image, Animated, Modal, ImageBackground,
+  Platform, Image, Animated, Modal, ImageBackground, Linking,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -13,6 +13,7 @@ import { Spacing } from '@/constants/Spacing';
 import { useAuthStore } from '@/store/authStore';
 import { useDarkModeTheme } from '@/context/ThemeContext';
 import { logout, sendPasswordChangeOtp, changePassword } from '@/features/auth/services/auth';
+import { useTranslation } from '@/context/LanguageContext';
 import {
   getUserProfile,
   updateUserProfile,
@@ -193,6 +194,7 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { user, setUser, clearUser } = useAuthStore();
   const { theme, isDark } = useDarkModeTheme();
+  const { t } = useTranslation();
 
   const [name, setName] = useState(user?.username || '');
   const [location, setLocation] = useState(user?.location || '');
@@ -472,11 +474,11 @@ export default function ProfileScreen() {
       >
 
         {/* Profile Info */}
-        <SectionCard title="Account Settings" icon="person-outline" color={theme.primary} theme={theme}>
-          <FieldRow label="Full Name" value={name} onChangeText={setName} placeholder="Enter your full name" icon="person-outline" theme={theme} />
-          <FieldRow label="Email Address" value={user?.email || ''} readOnly icon="mail-outline" theme={theme} />
-          <FieldRow label="Phone Number" value={user?.phone || 'Not provided'} readOnly icon="call-outline" theme={theme} />
-          <FieldRow label="Village / City" value={location} onChangeText={setLocation} placeholder="e.g. Balasore, Odisha" icon="location-outline" theme={theme} />
+        <SectionCard title={t('profile.menu.accountSettings')} icon="person-outline" color={theme.primary} theme={theme}>
+          <FieldRow label={t('profile.fields.fullName')} value={name} onChangeText={setName} placeholder="Enter your full name" icon="person-outline" theme={theme} />
+          <FieldRow label={t('profile.fields.email')} value={user?.email || ''} readOnly icon="mail-outline" theme={theme} />
+          <FieldRow label={t('profile.fields.phone')} value={user?.phone || 'Not provided'} readOnly icon="call-outline" theme={theme} />
+          <FieldRow label={t('profile.fields.village')} value={location} onChangeText={setLocation} placeholder="e.g. Balasore, Odisha" icon="location-outline" theme={theme} />
 
           <ActionRow
             label="Language Preferences"
@@ -489,9 +491,9 @@ export default function ProfileScreen() {
           {hasChanges && (
             <View style={[styles.unsavedBanner, { backgroundColor: isDark ? '#3D2B1A' : '#FEF3C7' }]}>
               <Ionicons name="alert-circle-outline" size={15} color={isDark ? '#F59E0B' : '#92400e'} />
-              <Text style={[styles.unsavedText, { color: isDark ? '#F59E0B' : '#92400e' }]}>Unsaved changes</Text>
+              <Text style={[styles.unsavedText, { color: isDark ? '#F59E0B' : '#92400e' }]}>{t('profile.unsavedChanges')}</Text>
               <Pressable onPress={() => { setName(originalName); setLocation(originalLocation); }}>
-                <Text style={[styles.discardText, { color: isDark ? '#FCD34D' : '#b45309' }]}>Discard</Text>
+                <Text style={[styles.discardText, { color: isDark ? '#FCD34D' : '#b45309' }]}>{t('profile.discard')}</Text>
               </Pressable>
             </View>
           )}
@@ -507,7 +509,7 @@ export default function ProfileScreen() {
               ) : (
                 <>
                   <Ionicons name="save-outline" size={17} color="#fff" />
-                  <Text style={styles.saveBtnText}>Save Changes</Text>
+                  <Text style={styles.saveBtnText}>{t('profile.saveChanges')}</Text>
                 </>
               )}
             </LinearGradient>
@@ -515,10 +517,10 @@ export default function ProfileScreen() {
         </SectionCard>
 
         {/* Security */}
-        <SectionCard title="Security" icon="lock-closed-outline" color="#3b82f6" theme={theme}>
+        <SectionCard title={t('profile.security')} icon="lock-closed-outline" color="#3b82f6" theme={theme}>
           <ActionRow
-            label="Change Password"
-            sublabel={isOAuthUser ? `Managed by ${provider.label}` : 'Send reset link to your email'}
+            label={t('profile.changePassword')}
+            sublabel={isOAuthUser ? t('profile.managedBy', { provider: provider.label }) : t('profile.sendResetLink')}
             icon="key-outline"
             onPress={handleChangePassword}
             theme={theme}
@@ -526,10 +528,10 @@ export default function ProfileScreen() {
         </SectionCard>
 
         {/* AI Settings */}
-        <SectionCard title="AI Settings" icon="sparkles-outline" color="#a855f7" theme={theme}>
+        <SectionCard title={t('profile.aiSettings')} icon="sparkles-outline" color="#a855f7" theme={theme}>
           <ToggleRow
-            label="AI Pipeline Control"
-            description="Enable automated AI analysis when syncing data from your Agni soil sensor."
+            label={t('profile.aiPipelineControl')}
+            description={t('profile.aiPipelineDesc')}
             value={aiPricingEnabled}
             onToggle={handleAiPricingToggle}
             loading={aiPricingLoading}
@@ -538,10 +540,10 @@ export default function ProfileScreen() {
         </SectionCard>
 
         {/* Privacy & Data Settings */}
-        <SectionCard title="Privacy & Data Settings" icon="shield-checkmark-outline" color="#10b981" theme={theme}>
+        <SectionCard title={t('profile.privacyDataSettings')} icon="shield-checkmark-outline" color="#10b981" theme={theme}>
           <ActionRow
-            label="Manage Privacy & Data"
-            sublabel="Visibility, sharing, analytics, and emails"
+            label={t('profile.managePrivacy')}
+            sublabel={t('profile.privacyDesc')}
             icon="options-outline"
             onPress={() => setPrivacyModalVisible(true)}
             theme={theme}
@@ -549,10 +551,10 @@ export default function ProfileScreen() {
         </SectionCard>
 
         {/* Data Management */}
-        <SectionCard title="Data Management" icon="folder-open-outline" color="#8b5cf6" theme={theme}>
+        <SectionCard title={t('profile.dataManagement')} icon="folder-open-outline" color="#8b5cf6" theme={theme}>
           <ActionRow
-            label="Export Historical Data"
-            sublabel="Download your soil tests as JSON or CSV"
+            label={t('profile.exportHistory')}
+            sublabel={t('profile.exportDesc')}
             icon="download-outline"
             onPress={handleExportData}
             theme={theme}
@@ -560,17 +562,18 @@ export default function ProfileScreen() {
         </SectionCard>
 
         {/* Quick Links */}
-        <SectionCard title="Quick Links" icon="apps-outline" color="#f59e0b" theme={theme}>
-          <ActionRow label="App Settings" sublabel="Notifications, language, theme" icon="settings-outline" onPress={() => router.push('/(app)/settings')} theme={theme} />
-          <ActionRow label="Chat History" sublabel="View past AI conversations" icon="chatbubbles-outline" onPress={() => router.push('/(app)/chat-history')} theme={theme} />
-          <ActionRow label="Buy Agni Device" sublabel="Get your soil sensor" icon="cart-outline" onPress={() => router.push('/(app)/buy-agni')} badge="New" theme={theme} />
-          <ActionRow label="About Saathi AI" sublabel="Version & legal info" icon="information-circle-outline" onPress={() => router.push('/(app)/about')} theme={theme} />
+        <SectionCard title={t('profile.menu.quickLinks')} icon="apps-outline" color="#f59e0b" theme={theme}>
+          <ActionRow label={t('profile.menu.appSettings')} sublabel="Notifications, language, theme" icon="settings-outline" onPress={() => router.push('/(app)/settings')} theme={theme} />
+          <ActionRow label={t('profile.menu.chatHistory')} sublabel="View past AI conversations" icon="chatbubbles-outline" onPress={() => router.push('/(app)/chat-history')} theme={theme} />
+          <ActionRow label={t('profile.menu.buyAgni')} sublabel="Get your soil sensor" icon="cart-outline" onPress={() => Linking.openURL('https://www.saathiai.org/buy-agni')} badge="New" theme={theme} />
+          <ActionRow label={t('profile.menu.readBlogs')} sublabel="Latest farming insights & updates" icon="newspaper-outline" onPress={() => Linking.openURL('https://www.saathiai.org/blog')} theme={theme} />
+          <ActionRow label={t('profile.menu.aboutSaathi')} sublabel="Version & legal info" icon="information-circle-outline" onPress={() => router.push('/(app)/about')} theme={theme} />
         </SectionCard>
 
         {/* Danger zone */}
-        <SectionCard title="Account Actions" icon="warning-outline" color={theme.error} theme={theme}>
+        <SectionCard title={t('profile.appActions')} icon="warning-outline" color={theme.error} theme={theme}>
           <ActionRow
-            label="Log Out"
+            label={t('profile.menu.logout')}
             sublabel="You can log back in anytime"
             icon="log-out-outline"
             onPress={handleLogout}
@@ -581,15 +584,44 @@ export default function ProfileScreen() {
 
         {/* Footer */}
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: theme.textMuted }]}>Saathi AI · Farmer First Technology</Text>
+          <View style={{ alignItems: 'center', marginBottom: 16, marginTop: 10 }}>
+            {/* First Row: Har kisan ka digital Saathi, */}
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 24, color: theme.label2, fontFamily: 'TrainexDemo', letterSpacing: -0.5 }}>
+                Har kisan ka digital{' '}
+              </Text>
+              <Text style={{ fontFamily: 'RuntimeRegular', fontSize: 27, color: isDark ? '#34D399' : '#15803d' }}>
+                Saathi
+              </Text>
+              <Text style={{ fontSize: 24, color: theme.label2, fontFamily: 'TrainexDemo', letterSpacing: -0.5 }}>
+                ,
+              </Text>
+            </View>
+            
+            {/* Second Row: Mitti samjho, sahi faisla lo... */}
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', marginTop: 4, justifyContent: 'center' }}>
+              <Text style={{ fontFamily: 'RuntimeRegular', fontSize: 27, color: isDark ? '#34D399' : '#15803d' }}>
+                Mitti
+              </Text>
+              <Text style={{ fontSize: 24, color: theme.label2, fontFamily: 'TrainexDemo', letterSpacing: -0.5 }}>
+                {' '}samjho, sahi faisla lo...
+              </Text>
+            </View>
+
+            {/* Mitti AI Signature */}
+            <Text style={{ fontSize: 16, color: theme.label3, fontFamily: 'Sora_500Medium', letterSpacing: 0.2, marginTop: 12 }}>
+              💚 From Mitti AI
+            </Text>
+          </View>
+
           <Text style={[styles.footerSub, { color: theme.textMuted + '99' }]}>
-            {'Farmer ID: '}
+            {t('profile.farmerId') + ': '}
             {user?.id
               ? String(user.id).length > 12
                 ? String(user.id).slice(0, 6) + '···' + String(user.id).slice(-4)
                 : String(user.id)
               : 'Loading...'}
-            {'  ·  Joined '}
+            {'  ·  ' + t('profile.joined') + ' '}
             {user?.createdAt
               ? new Date(user.createdAt).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })
               : '—'}
@@ -617,9 +649,9 @@ export default function ProfileScreen() {
               <LinearGradient colors={isDark ? ['#3D1A1A', '#2D1A1A'] : ['#fee2e2','#fecaca']} style={{ width:72, height:72, borderRadius:36, alignItems:'center', justifyContent:'center', marginBottom:14 }}>
                 <Ionicons name="log-out-outline" size={32} color={isDark ? '#F87171' : "#dc2626"} />
               </LinearGradient>
-              <Text style={{ fontFamily:'Sora_800ExtraBold', fontSize:20, color: theme.textPrimary, textAlign:'center', marginBottom:8 }}>Logging out?</Text>
+              <Text style={{ fontFamily:'Sora_800ExtraBold', fontSize:20, color: theme.textPrimary, textAlign:'center', marginBottom:8 }}>{t('profile.logoutModal.title')}</Text>
               <Text style={{ fontFamily:'Sora_400Regular', fontSize:13, color: theme.textSecondary, textAlign:'center', lineHeight:20, paddingHorizontal:12 }}>
-                {`Hey ${user?.username?.split(' ')[0] || 'Farmer'}, your soil data and crop history are safe.\nCome back anytime! 🌾`}
+                {t('profile.logoutModal.desc')}
               </Text>
             </View>
 
@@ -642,13 +674,13 @@ export default function ProfileScreen() {
                 style={{ flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, paddingVertical:15, borderRadius:14 }}>
                 {isLoggingOut
                   ? <ActivityIndicator size="small" color="#fff" />
-                  : <><Ionicons name="log-out-outline" size={18} color="#fff" /><Text style={{ fontFamily:'Sora_700Bold', fontSize:15, color:'#fff' }}>Yes, Log Out</Text></>}
+                  : <><Ionicons name="log-out-outline" size={18} color="#fff" /><Text style={{ fontFamily:'Sora_700Bold', fontSize:15, color:'#fff' }}>{t('profile.logoutModal.btn')}</Text></>}
               </LinearGradient>
             </Pressable>
 
             <Pressable onPress={() => setLogoutModalVisible(false)} disabled={isLoggingOut}
               style={{ paddingVertical:14, borderRadius:14, alignItems:'center', borderWidth:1.5, borderColor: theme.borderLight, backgroundColor: theme.surface }}>
-              <Text style={{ fontFamily:'Sora_700Bold', fontSize:15, color: theme.primary }}>Stay Logged In</Text>
+              <Text style={{ fontFamily:'Sora_700Bold', fontSize:15, color: theme.primary }}>{t('common.cancel')}</Text>
             </Pressable>
           </View>
         </View>

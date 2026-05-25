@@ -121,7 +121,11 @@ export function useChat(sessionId?: string) {
       try {
         // Auto-create a session if we don't have one yet
         if (!activeSessionIdRef.current) {
-          const newSession = await createChatSession('New Chat', 'en');
+          let initialTitle = content.trim();
+          if (initialTitle.length > 50) {
+            initialTitle = initialTitle.substring(0, 47) + '...';
+          }
+          const newSession = await createChatSession(initialTitle, 'en');
           activeSessionIdRef.current = newSession.id;
         }
 

@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -17,6 +18,7 @@ import { Colors } from '@/constants/Colors';
 import { Spacing } from '@/constants/Spacing';
 import { useDarkModeTheme } from '@/context/ThemeContext';
 import { api, ChatSession } from '@/services/api';
+import { useTranslation } from '@/context/LanguageContext';
 
 function safeDateLabel(value?: string | null): string {
   if (!value) return 'Recently';
@@ -53,6 +55,7 @@ function SessionCard({
   onContinue: () => void;
 }) {
   const { theme } = useDarkModeTheme();
+  const { t } = useTranslation();
   return (
     <Pressable
       style={({ pressed }) => [styles.sessionCard, { backgroundColor: theme.surface, borderColor: theme.border }, pressed && { opacity: 0.85 }]}
@@ -71,7 +74,9 @@ function SessionCard({
             <Text style={[styles.sessionDate, { color: theme.textMuted }]}>{safeDateLabel(session.lastMessageAt)}</Text>
             <View style={[styles.dot, { backgroundColor: theme.textMuted }]} />
             <Ionicons name="chatbubble-outline" size={12} color={theme.textMuted} />
-            <Text style={[styles.sessionDate, { color: theme.textMuted }]}>{Number(session.messageCount || 0)} msgs</Text>
+            <Text style={[styles.sessionDate, { color: theme.textMuted }]}>
+              {t('chatHistory.msgCount', { count: Number(session.messageCount || 0) })}
+            </Text>
             <View style={[styles.langBadge, { backgroundColor: theme.surfaceAlt }]}>
               <Text style={[styles.langBadgeText, { color: theme.primary }]}>{(session.language || 'en').toUpperCase()}</Text>
             </View>
@@ -81,7 +86,7 @@ function SessionCard({
       <View style={styles.sessionActions}>
         <Pressable style={[styles.continueBtn, { backgroundColor: theme.surfaceAlt, borderColor: theme.border }]} onPress={onContinue}>
           <Ionicons name="arrow-forward-outline" size={14} color={theme.primary} />
-          <Text style={[styles.continueBtnText, { color: theme.primary }]}>Continue</Text>
+          <Text style={[styles.continueBtnText, { color: theme.primary }]}>{t('common.continue')}</Text>
         </Pressable>
         <Pressable style={[styles.deleteBtn, { backgroundColor: theme.error + '15' }]} onPress={onDelete}>
           <Ionicons name="trash-outline" size={16} color={theme.error} />
@@ -94,6 +99,7 @@ function SessionCard({
 export default function ChatHistoryScreen() {
   const router = useRouter();
   const { theme, isDark } = useDarkModeTheme();
+  const { t } = useTranslation();
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [search, setSearch] = useState('');
   const [isLoading, setIsLoading] = useState(true);
@@ -134,24 +140,24 @@ export default function ChatHistoryScreen() {
       setSessions((prev) => [newSession, ...prev]);
       router.push({ pathname: '/(app)/ai-chat', params: { sessionId: newSession.id } });
     } catch {
-      Alert.alert('Error', 'Failed to create a new chat session. Please try again.');
+      Alert.alert(t('common.error'), t('chatHistory.newSessionFailed'));
     } finally {
       setIsCreating(false);
     }
   };
 
   const handleDeleteSession = (sessionId: string) => {
-    Alert.alert('Delete Session', 'Are you sure you want to delete this chat session?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('chatHistory.deleteConfirmTitle'), t('chatHistory.deleteConfirmDesc'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
           try {
             await api.deleteChatSession(sessionId);
             setSessions((prev) => prev.filter((session) => session.id !== sessionId));
           } catch {
-            Alert.alert('Error', 'Could not delete the session. Please try again.');
+            Alert.alert(t('common.error'), t('chatHistory.deleteSessionFailed'));
           }
         },
       },
@@ -185,9 +191,12 @@ export default function ChatHistoryScreen() {
         />
       )}
       <View style={styles.header}>
-        <View>
-          <Text style={[styles.headerTitle, { color: theme.textPrimary }]}>Chat History</Text>
-          <Text style={[styles.headerSub, { color: theme.textSecondary }]}>Review and manage your AI conversations</Text>
+        <TouchableOpacity onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.primaryLight }]} hitSlop={12}>
+          <Ionicons name="chevron-back" size={22} color={theme.primary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1, marginRight: Spacing.md }}>
+          <Text style={[styles.headerTitle, { color: theme.textPrimary }]} numberOfLines={1}>{t('chatHistory.title')}</Text>
+          <Text style={[styles.headerSub, { color: theme.textSecondary }]} numberOfLines={2}>{t('chatHistory.subtitle')}</Text>
         </View>
         <Pressable
           style={[styles.newChatBtn, { backgroundColor: theme.primary }, isCreating && { opacity: 0.7 }]}
@@ -199,7 +208,7 @@ export default function ChatHistoryScreen() {
           ) : (
             <Ionicons name="add" size={20} color="#fff" />
           )}
-          <Text style={styles.newChatBtnText}>{isCreating ? 'Creating...' : 'New Chat'}</Text>
+          <Text style={styles.newChatBtnText}>{isCreating ? t('chatHistory.creating') : t('chatHistory.newChat')}</Text>
         </Pressable>
       </View>
 
@@ -207,7 +216,7 @@ export default function ChatHistoryScreen() {
         <Ionicons name="search-outline" size={18} color={theme.textMuted} />
         <TextInput
           style={[styles.searchInput, { color: theme.textPrimary }]}
-          placeholder="Search sessions..."
+          placeholder={t('chatHistory.searchPlaceholder')}
           placeholderTextColor={theme.textMuted}
           value={search}
           onChangeText={setSearch}
@@ -228,28 +237,28 @@ export default function ChatHistoryScreen() {
 
       {!isLoading && (
         <Text style={[styles.countLabel, { color: theme.textMuted }]}>
-          {filtered.length} session{filtered.length !== 1 ? 's' : ''}{search ? ' found' : ''}
+          {t('chatHistory.sessionsCount', { count: filtered.length })}
         </Text>
       )}
 
       {isLoading ? (
         <View style={styles.centered}>
           <ActivityIndicator size="large" color={theme.primary} />
-          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>Loading sessions...</Text>
+          <Text style={[styles.loadingText, { color: theme.textSecondary }]}>{t('common.loading')}</Text>
         </View>
       ) : filtered.length === 0 ? (
         <View style={styles.centered}>
           <Ionicons name="chatbubbles-outline" size={64} color={theme.border} />
-          <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{search ? 'No sessions found' : 'No chat sessions yet'}</Text>
+          <Text style={[styles.emptyTitle, { color: theme.textPrimary }]}>{search ? t('chatHistory.noSessionsFound') : t('chatHistory.emptyChats')}</Text>
           <Text style={[styles.emptyDesc, { color: theme.textSecondary }]}>
             {search
-              ? 'Try a different search term.'
-              : 'Start a conversation with Saathi AI to see your history here.'}
+              ? t('chatHistory.tryDifferentSearch')
+              : t('chatHistory.emptyChatsDesc')}
           </Text>
           {!search && (
             <Pressable style={[styles.startChatBtn, { backgroundColor: theme.primary }]} onPress={handleNewChat} disabled={isCreating}>
               <Ionicons name="add-circle-outline" size={18} color="#fff" />
-              <Text style={styles.startChatBtnText}>Start New Chat</Text>
+              <Text style={styles.startChatBtnText}>{t('chatHistory.startNewChat')}</Text>
             </Pressable>
           )}
         </View>
@@ -282,6 +291,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
   headerTitle: { fontFamily: 'Sora_800ExtraBold', fontSize: 26 },
   headerSub: { fontFamily: 'Sora_400Regular', fontSize: 13, marginTop: 4 },

@@ -60,7 +60,7 @@ async function getToken(): Promise<string | null> {
 
   if (stored) {
     _cachedToken = stored;
-    console.log('[API] Token loaded from storage');
+    if (__DEV__) console.log('[API] Token loaded from storage');
   }
   return stored;
 }
@@ -86,9 +86,9 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
         config.headers = config.headers ?? {};
         config.headers.Authorization = `Bearer ${token}`;
       }
-      console.log('[API] Authorization header attached');
+      if (__DEV__) console.log('[API] Authorization header attached');
     } else {
-      console.warn('[API] No token available — request sent without Authorization');
+      if (__DEV__) console.warn('[API] No token available — request sent without Authorization');
     }
   } catch {
     // ignore
@@ -107,7 +107,7 @@ function drainRefreshQueue(token: string | null) {
 
 api.interceptors.response.use(
   (response: AxiosResponse) => {
-    console.log(`[API] Success: ${response.config.method?.toUpperCase()} ${response.config.url} [${response.status}]`);
+    if (__DEV__) console.log(`[API] Success: ${response.config.method?.toUpperCase()} ${response.config.url} [${response.status}]`);
     return response;
   },
   async (error: AxiosError) => {
@@ -122,14 +122,16 @@ api.interceptors.response.use(
     // Construct a cleaner log message. We avoid the word "Error" for 4xx to prevent alarming the user.
     const logMsg = `[API] ${status && status >= 400 && status < 500 ? 'Warning' : 'Error'}: ${method} ${url} [${status || 'Network/Timeout'}] - ${error.message}`;
 
-    if (status && status >= 400 && status < 500) {
-      console.warn(logMsg);
-    } else {
-      console.error(logMsg);
-    }
-    
-    if (error.response?.data) {
-      console.warn(`[API] Server Response Data:`, JSON.stringify(error.response.data));
+    if (__DEV__) {
+      if (status && status >= 400 && status < 500) {
+        console.warn(logMsg);
+      } else {
+        console.error(logMsg);
+      }
+      
+      if (error.response?.data) {
+        console.warn(`[API] Server Response Data:`, JSON.stringify(error.response.data));
+      }
     }
 
     if (error.response?.status !== 401 || originalRequest._retried) {
@@ -139,7 +141,7 @@ api.interceptors.response.use(
     // Log the exact server response body so we can see WHY it rejected us
     const responseBody = error.response?.data;
     const route = originalRequest?.url ?? '(unknown)';
-    console.warn(`[API] 401 on ${route} — server response:`, JSON.stringify(responseBody));
+    if (__DEV__) console.warn(`[API] 401 on ${route} — server response:`, JSON.stringify(responseBody));
     originalRequest._retried = true;
 
     // ── Try to refresh the access token ──────────────────────────────────────
@@ -167,12 +169,12 @@ api.interceptors.response.use(
         // Do NOT wipe the session here — the access token may still be valid
         // and the 401 may be a temporary server-side issue.
         // Just drain the queue with null and reject the original request.
-        console.warn('[API] No refresh token stored — cannot refresh. Access token left intact.');
+        if (__DEV__) console.warn('[API] No refresh token stored — cannot refresh. Access token left intact.');
         drainRefreshQueue(null);
         return Promise.reject(error);
       }
 
-      console.log('[API] Calling /api/auth/refresh');
+      if (__DEV__) console.log('[API] Calling /api/auth/refresh');
 
       const { data } = await axios.post(
         `${API_BASE_URL}/api/auth/refresh`,
@@ -185,7 +187,7 @@ api.interceptors.response.use(
       const newRefreshToken: string | undefined = data.refreshToken;
 
       if (!newAccessToken || typeof newAccessToken !== 'string') {
-        console.error('[API] Refresh endpoint returned no token. Keys:', JSON.stringify(Object.keys(data)));
+        if (__DEV__) console.error('[API] Refresh endpoint returned no token. Keys:', JSON.stringify(Object.keys(data)));
         throw new Error('Refresh response did not contain a valid access token');
       }
 
@@ -194,7 +196,7 @@ api.interceptors.response.use(
         await AsyncStorage.setItem(REFRESH_KEY, newRefreshToken);
       }
 
-      console.log('[API] Token refreshed successfully');
+      if (__DEV__) console.log('[API] Token refreshed successfully');
       drainRefreshQueue(newAccessToken);
 
       if (originalRequest.headers && typeof originalRequest.headers.set === 'function') {
@@ -209,11 +211,11 @@ api.interceptors.response.use(
       // (meaning the refresh token is expired/invalid), NOT for missing tokens.
       const refreshStatus = (refreshErr as AxiosError)?.response?.status;
       if (refreshStatus === 401 || refreshStatus === 403) {
-        console.error('[API] Refresh token rejected by server — clearing session');
+        if (__DEV__) console.error('[API] Refresh token rejected by server — clearing session');
         _cachedToken = null;
         await AsyncStorage.multiRemove([TOKEN_KEY, REFRESH_KEY]);
       } else {
-        console.error('[API] Refresh call failed (non-auth error) — keeping session intact');
+        if (__DEV__) console.error('[API] Refresh call failed (non-auth error) — keeping session intact');
       }
       drainRefreshQueue(null);
       return Promise.reject(refreshErr);
