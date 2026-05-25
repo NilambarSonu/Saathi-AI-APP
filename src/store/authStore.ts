@@ -168,15 +168,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
       const mappedUser = mapUser(data.user);
 
-      // ✅ Save to SecureStore and AsyncStorage FIRST (concurrently, very fast)
-      try {
-        await Promise.all([
-          saveAuthTokens(data.token, data.refreshToken || undefined),
-          AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser))
-        ]);
-      } catch (e) {
+      // ✅ Fire and forget persistence! Don't block the UI thread waiting for SecureStore
+      Promise.all([
+        saveAuthTokens(data.token, data.refreshToken || undefined),
+        AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser))
+      ]).catch(e => {
         if (__DEV__) console.error('[Storage] login persistence failed:', e);
-      }
+      });
 
       tokenCache.set(data.token, data.refreshToken);
       invalidateCache();
@@ -251,14 +249,13 @@ export const useAuthStore = create<AuthState>((set, get) => {
 
   setSession: async (user, token, refreshToken) => {
     const mappedUser = mapUser(user);
-    try {
-      await Promise.all([
-        saveAuthTokens(token, refreshToken || undefined),
-        AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser))
-      ]);
-    } catch (e) {
+    // ✅ Fire and forget
+    Promise.all([
+      saveAuthTokens(token, refreshToken || undefined),
+      AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(mappedUser))
+    ]).catch(e => {
       if (__DEV__) console.error('[AuthStore] setSession storage failed:', e);
-    }
+    });
     tokenCache.set(token, refreshToken || null);
     set({ token, user: mappedUser, isAuthenticated: true, isInitialized: true, isLoading: false, error: null });
   },

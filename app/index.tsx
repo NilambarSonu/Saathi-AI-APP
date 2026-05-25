@@ -113,9 +113,11 @@ export default function SplashScreen() {
       const legacyHasOnboarded = await AsyncStorage.getItem('hasOnboarded');
       const isOnboarded = hasOnboarded === 'true' || legacyHasOnboarded === 'true';
       
+      const currentIsAuthenticated = useAuthStore.getState().isAuthenticated;
+      
       if (!isOnboarded) {
         router.replace('/(onboarding)');
-      } else if (!isAuthenticated) {
+      } else if (!currentIsAuthenticated) {
         router.replace('/(auth)/login');
       } else {
         router.replace('/(app)');

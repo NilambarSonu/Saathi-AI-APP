@@ -7,7 +7,6 @@ import {
   Linking,
   Platform,
   Pressable,
-  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -636,14 +635,14 @@ const handleSend = async () => {
 
           <TextInput
             style={[styles.input, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder={t('enterName')}
+            placeholder={t('Enter Your Name')}
             placeholderTextColor={theme.textMuted}
             value={fullName}
             onChangeText={setFullName}
           />
           <TextInput
             style={[styles.input, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder={t('enterEmail')}
+            placeholder={t('Enter Your Email')}
             placeholderTextColor={theme.textMuted}
             keyboardType="email-address"
             autoCapitalize="none"
@@ -652,7 +651,7 @@ const handleSend = async () => {
           />
           <TextInput
             style={[styles.textarea, { backgroundColor: isDark ? theme.bg1 : theme.bg0, borderColor: theme.border, color: theme.textPrimary }]}
-            placeholder={t('enterMessage')}
+            placeholder={t('Enter Your Message')}
             placeholderTextColor={theme.textMuted}
             multiline
             textAlignVertical="top"
@@ -663,7 +662,7 @@ const handleSend = async () => {
             onPress={handleSend} 
             sending={sending} 
             success={sendSuccess}
-            text={t('sendButton')} 
+            text={t('Send Message')} 
             theme={theme} 
           />
         </View>
@@ -1006,86 +1005,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 2,
   },
-});
-
-function PremiumSendButton({ onPress, sending, success, disabled, text, theme }: any) {
-  const scale = React.useRef(new Animated.Value(1)).current;
-  const gradientTranslateX = React.useRef(new Animated.Value(-300)).current;
-  const pulseAnim = React.useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    if (sending) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(gradientTranslateX, { toValue: 300, duration: 1200, useNativeDriver: true }),
-          Animated.timing(gradientTranslateX, { toValue: -300, duration: 0, useNativeDriver: true })
-        ])
-      ).start();
-    } else {
-      gradientTranslateX.setValue(-300);
-      gradientTranslateX.stopAnimation();
-    }
-  }, [sending]);
-
-  useEffect(() => {
-    if (success) {
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, duration: 200, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 300, useNativeDriver: true })
-      ]).start();
-    }
-  }, [success]);
-
-  const handlePressIn = () => {
-    if (!disabled && !sending && !success) {
-      Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
-    }
-  };
-  const handlePressOut = () => {
-    if (!disabled && !sending && !success) {
-      Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 40 }).start();
-    }
-  };
-
-  return (
-    <Animated.View style={{ transform: [{ scale: Animated.multiply(scale, pulseAnim) }], width: '100%', marginTop: 8 }}>
-      <Pressable
-        onPress={onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        disabled={disabled || sending || success}
-        style={[
-          styles.premiumSendBtn,
-          { backgroundColor: success ? theme.success || '#10B981' : theme.primary },
-          disabled && !sending && !success && { opacity: 0.6 }
-        ]}
-      >
-        <View style={styles.premiumSendContent}>
-          {success ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-              <Text style={styles.sendButtonText}>Message Sent!</Text>
-            </View>
-          ) : sending ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <ActivityIndicator color="#FFFFFF" size="small" />
-              <Text style={styles.sendButtonText}>Sending...</Text>
-            </View>
-          ) : (
-            <Text style={styles.sendButtonText}>{text}</Text>
-          )}
-        </View>
-
-        {sending && (
-          <Animated.View style={[StyleSheet.absoluteFillObject, { transform: [{ translateX: gradientTranslateX }], opacity: 0.5 }]}>
-            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.3)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />
-          </Animated.View>
-        )}
-      </Pressable>
-    </Animated.View>
-  );
-}
-
   starsContainer: {
     alignItems: 'flex-end',
     justifyContent: 'center',
@@ -1179,3 +1098,81 @@ function PremiumSendButton({ onPress, sending, success, disabled, text, theme }:
   footerTitle: { fontFamily: 'Sora_800ExtraBold', fontSize: 17 },
   footerText: { fontFamily: 'Sora_400Regular', fontSize: 12, marginTop: 5, textAlign: 'center' },
 });
+
+function PremiumSendButton({ onPress, sending, success, disabled, text, theme }: any) {
+  const scale = React.useRef(new Animated.Value(1)).current;
+  const gradientTranslateX = React.useRef(new Animated.Value(-300)).current;
+  const pulseAnim = React.useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    if (sending) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(gradientTranslateX, { toValue: 300, duration: 1200, useNativeDriver: true }),
+          Animated.timing(gradientTranslateX, { toValue: -300, duration: 0, useNativeDriver: true })
+        ])
+      ).start();
+    } else {
+      gradientTranslateX.setValue(-300);
+      gradientTranslateX.stopAnimation();
+    }
+  }, [sending]);
+
+  useEffect(() => {
+    if (success) {
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 300, useNativeDriver: true })
+      ]).start();
+    }
+  }, [success]);
+
+  const handlePressIn = () => {
+    if (!disabled && !sending && !success) {
+      Animated.spring(scale, { toValue: 0.95, useNativeDriver: true }).start();
+    }
+  };
+  const handlePressOut = () => {
+    if (!disabled && !sending && !success) {
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 40 }).start();
+    }
+  };
+
+  return (
+    <Animated.View style={{ transform: [{ scale: Animated.multiply(scale, pulseAnim) }], width: '100%', marginTop: 8 }}>
+      <Pressable
+        onPress={onPress}
+        onPressIn={handlePressIn}
+        onPressOut={handlePressOut}
+        disabled={disabled || sending || success}
+        style={[
+          styles.premiumSendBtn,
+          { backgroundColor: success ? theme.success || '#10B981' : theme.primary },
+          disabled && !sending && !success && { opacity: 0.6 }
+        ]}
+      >
+        <View style={styles.premiumSendContent}>
+          {success ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={styles.sendButtonText}>Message Sent!</Text>
+            </View>
+          ) : sending ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <ActivityIndicator color="#FFFFFF" size="small" />
+              <Text style={styles.sendButtonText}>Sending...</Text>
+            </View>
+          ) : (
+            <Text style={styles.sendButtonText}>{text}</Text>
+          )}
+        </View>
+
+        {sending && (
+          <Animated.View style={[StyleSheet.absoluteFillObject, { transform: [{ translateX: gradientTranslateX }], opacity: 0.5 }]}>
+            <LinearGradient colors={['transparent', 'rgba(0,0,0,0.3)', 'transparent']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFillObject} />
+          </Animated.View>
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+}
