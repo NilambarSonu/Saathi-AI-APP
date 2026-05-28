@@ -40,10 +40,16 @@ yarn-error.*
 scripts/send-notification.html
 scripts/notification-server.js
 
-# Markdown files - ignore all except README.md and GEMINI*.md
+# Markdown files - ignore all except README.md
 *.md
 !README.md
 
+# Ignore APK files - too large for GitHub (>100MB limit)
+*.apk
 
-# Track APK files in root
-!*.apk
+# Sensitive and temporary files
+.geminirc
+SQL-QUERIES.sql
+original_DashboardScreen.tsx
+original_en.ts
+google-services.json
