@@ -3,21 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Saathi AI - Broadcast Push Notifications</title>
-    <!-- Include Supabase JS SDK -->
+    <title>Saathi AI - Professional Push Center</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         :root {
-            --color-bg: #190019;
-            --color-panel: #2B124C;
-            --color-border: #522B5B;
+            --color-bg: #121212;
+            --color-panel: #1E1E1E;
+            --color-border: #333333;
             --color-primary: #854F6C;
+            --color-primary-hover: #A06484;
             --color-secondary: #DFB6B2;
-            --color-text: #FBE4D8;
+            --color-text: #E0E0E0;
+            --color-muted: #888888;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--color-bg);
             color: var(--color-text);
             margin: 0;
@@ -26,150 +27,347 @@
             justify-content: center;
         }
 
-        .container {
+        .dashboard {
             width: 100%;
-            max-width: 800px;
+            max-width: 1200px;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 2rem;
+        }
+
+        .panel {
             background-color: var(--color-panel);
             border-radius: 12px;
             padding: 2rem;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
             border: 1px solid var(--color-border);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
 
         h1 {
             color: var(--color-secondary);
-            text-align: center;
             margin-top: 0;
+            font-size: 1.5rem;
             margin-bottom: 2rem;
-            font-weight: 600;
-        }
-
-        .section-title {
-            color: var(--color-secondary);
-            font-size: 1.2rem;
             border-bottom: 1px solid var(--color-border);
-            padding-bottom: 0.5rem;
-            margin-bottom: 1.5rem;
-            margin-top: 2rem;
+            padding-bottom: 1rem;
         }
 
-        .form-group {
-            margin-bottom: 1.5rem;
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
+
+        .form-group.full {
+            grid-column: 1 / -1;
         }
 
         label {
             display: block;
             margin-bottom: 0.5rem;
-            color: var(--color-secondary);
+            color: var(--color-text);
             font-size: 0.9rem;
+            font-weight: 500;
         }
 
-        input[type="text"], input[type="password"], textarea, select {
+        input, textarea, select {
             width: 100%;
-            padding: 0.8rem;
-            border-radius: 6px;
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
             border: 1px solid var(--color-border);
-            background-color: rgba(25, 0, 25, 0.6);
-            color: var(--color-text);
-            font-size: 1rem;
+            background-color: #252525;
+            color: #FFF;
+            font-size: 0.95rem;
             box-sizing: border-box;
             outline: none;
-            transition: border-color 0.2s;
+            transition: all 0.2s;
+            font-family: inherit;
         }
 
-        input:focus, textarea:focus {
-            border-color: var(--color-secondary);
+        input:focus, textarea:focus, select:focus {
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 2px rgba(133, 79, 108, 0.25);
+        }
+
+        .help-text {
+            font-size: 0.75rem;
+            color: var(--color-muted);
+            margin-top: 0.4rem;
         }
 
         .btn {
             background-color: var(--color-primary);
-            color: var(--color-text);
+            color: #FFF;
             border: none;
-            padding: 1rem 2rem;
-            font-size: 1.1rem;
-            border-radius: 6px;
+            padding: 1rem;
+            font-size: 1rem;
+            border-radius: 8px;
             cursor: pointer;
-            width: 100%;
-            font-weight: bold;
+            font-weight: 600;
             transition: background-color 0.2s;
-            margin-top: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
         }
 
-        .btn:hover {
-            background-color: var(--color-border);
+        .btn:hover { background-color: var(--color-primary-hover); }
+        .btn:disabled { background-color: #444; color: #888; cursor: not-allowed; }
+
+        /* Mobile Preview Styles */
+        .phone-preview {
+            width: 320px;
+            height: 650px;
+            background: #000;
+            border-radius: 40px;
+            border: 8px solid #333;
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.8);
         }
 
-        .btn:disabled {
-            background-color: #333;
-            color: #888;
-            cursor: not-allowed;
+        .phone-notch {
+            position: absolute;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 120px;
+            height: 25px;
+            background: #333;
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
+            z-index: 10;
+        }
+
+        .phone-screen {
+            flex: 1;
+            background: url('https://images.unsplash.com/photo-1500382017468-9049fed747ef?q=80&w=1000') center/cover;
+            padding: 40px 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .notification-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 12px;
+            color: #000;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            animation: slideDown 0.3s ease-out;
+            transition: all 0.3s ease;
+        }
+
+        .notif-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .notif-icon {
+            width: 16px;
+            height: 16px;
+            background: #854F6C;
+            border-radius: 4px;
+        }
+
+        .notif-title {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #111;
+            margin-bottom: 2px;
+        }
+        
+        .notif-subtitle {
+            font-weight: 500;
+            font-size: 0.85rem;
+            color: #444;
+            margin-bottom: 4px;
+        }
+
+        .notif-body {
+            font-size: 0.85rem;
+            color: #333;
+            line-height: 1.3;
+            display: -webkit-box;
+            -webkit-line-clamp: 3;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .notif-hero-img {
+            width: 100%;
+            height: 120px;
+            border-radius: 8px;
+            margin-top: 8px;
+            object-fit: cover;
+            display: none;
+        }
+
+        @keyframes slideDown {
+            from { transform: translateY(-20px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
         }
 
         .logs {
-            background-color: var(--color-bg);
+            background-color: #0A0A0A;
             border: 1px solid var(--color-border);
-            border-radius: 6px;
+            border-radius: 8px;
             padding: 1rem;
-            height: 200px;
+            height: 150px;
             overflow-y: auto;
-            font-family: monospace;
-            font-size: 0.9rem;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #A0A0A0;
             margin-top: 1.5rem;
-            color: var(--color-secondary);
         }
-
         .log-success { color: #86efac; }
         .log-error { color: #fca5a5; }
-        .log-info { color: var(--color-secondary); }
+        .log-info { color: #93c5fd; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>Saathi AI - Notification Broadcast</h1>
+<div class="dashboard">
+    <!-- Left Panel: Controls -->
+    <div class="panel">
+        <h1>Broadcast Center</h1>
 
-    <div class="section-title">1. Notification Details</div>
+        <div class="form-grid">
+            <div class="form-group full">
+                <label>Header (Title)</label>
+                <input type="text" id="notifTitle" placeholder="e.g. 🌱 Weekly Soil Report Ready" value="Saathi AI 🌱" oninput="updatePreview()">
+                <div class="help-text">The main bold title of the notification.</div>
+            </div>
 
-    <div class="form-group">
-        <label for="notifTitle">Title</label>
-        <input type="text" id="notifTitle" placeholder="e.g. 🌱 Weather Alert" value="Saathi AI 🌱">
+            <div class="form-group full">
+                <label>Sub Header (Subtitle) - Optional</label>
+                <input type="text" id="notifSubtitle" placeholder="e.g. Field #3 requires attention" oninput="updatePreview()">
+                <div class="help-text">Appears below the title on supported devices (iOS & some Android).</div>
+            </div>
+
+            <div class="form-group full">
+                <label>Content Paragraph (Body)</label>
+                <textarea id="notifBody" rows="3" placeholder="Write your notification message here..." oninput="updatePreview()"></textarea>
+                <div class="help-text" id="charCount">0 characters</div>
+            </div>
+
+            <div class="form-group full">
+                <label>Hero Image URL (Optional)</label>
+                <input type="text" id="notifImage" placeholder="https://example.com/large-image.jpg" oninput="updatePreview()">
+                <div class="help-text">Must be a direct link to a large image (approx 1024x512). Favicons will be ignored by Android.</div>
+            </div>
+
+            <div class="form-group">
+                <label>On Click Action</label>
+                <select id="actionType" onchange="toggleActionInput()">
+                    <option value="app_screen">Open App Screen</option>
+                    <option value="external_url">Open External Website</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="appScreenContainer">
+                <label>Redirect Route</label>
+                <select id="notifScreen">
+                    <option value="/">Home Dashboard</option>
+                    <option value="/(app)/history">History / Soil Reports</option>
+                    <option value="/(app)/ai-chat">AI Assistant Chat</option>
+                    <option value="/(app)/connect">Agni Device Connection</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="urlContainer" style="display: none;">
+                <label>Website URL</label>
+                <input type="text" id="notifUrl" placeholder="https://saathiai.org/promo">
+            </div>
+
+            <div class="form-group full">
+                <label>Notification Priority / Category</label>
+                <select id="notifType">
+                    <option value="system">Standard Update</option>
+                    <option value="alert">High Priority Alert (Bypass silent mode if permitted)</option>
+                    <option value="insight">AI Insight</option>
+                </select>
+            </div>
+        </div>
+
+        <button id="sendBtn" class="btn" onclick="sendBroadcast()" style="margin-top: 2rem;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            Launch Broadcast
+        </button>
+
+        <div id="logs" class="logs">System ready.<br></div>
     </div>
 
-    <div class="form-group">
-        <label for="notifBody">Body</label>
-        <textarea id="notifBody" rows="3" placeholder="Notification message..."></textarea>
+    <!-- Right Panel: Live Preview -->
+    <div class="panel" style="display: flex; flex-direction: column; align-items: center; justify-content: center; background: #161616;">
+        <h3 style="color: var(--color-muted); margin-top: 0; margin-bottom: 2rem;">Live Device Preview</h3>
+        
+        <div class="phone-preview">
+            <div class="phone-notch"></div>
+            <div class="phone-screen">
+                <!-- Mock Notification -->
+                <div class="notification-card">
+                    <div class="notif-header">
+                        <div class="notif-icon"></div>
+                        <span>Saathi AI • now</span>
+                    </div>
+                    <div class="notif-title" id="prevTitle">Saathi AI 🌱</div>
+                    <div class="notif-subtitle" id="prevSubtitle" style="display:none;"></div>
+                    <div class="notif-body" id="prevBody">Your notification message will appear here...</div>
+                    <img class="notif-hero-img" id="prevImage" src="" alt="Hero Image">
+                </div>
+            </div>
+        </div>
     </div>
-
-    <div class="form-group">
-        <label for="notifImage">Image URL (Optional)</label>
-        <input type="text" id="notifImage" placeholder="https://example.com/image.jpg">
-        <p style="font-size: 0.75rem; color: var(--color-primary); margin-top: 5px; margin-bottom: 0;">
-            Direct link to an image to display in the notification (if supported).
-        </p>
-    </div>
-
-    <div class="form-group">
-        <label for="notifType">Notification Type / Route</label>
-        <select id="notifType">
-            <option value="system">System Announcement</option>
-            <option value="alert">Alert (High Priority)</option>
-            <option value="insight">Insight</option>
-        </select>
-    </div>
-
-    <button id="sendBtn" class="btn" onclick="sendBroadcast()">Fetch Tokens & Send Broadcast</button>
-
-    <div class="section-title">Console Logs</div>
-    <div id="logs" class="logs">Waiting to start...<br></div>
 </div>
 
 <script>
-    // Hardcoded Database Credentials
-    const SB_URL = 'https://gzqqjrwrgwutvxzbwzyl.supabase.co';
-    const SB_KEY = 'sb_publishable_m_iy0GI5ZnEWeKOxAn1ZTg_1-4vyprV';
-
     const logsDiv = document.getElementById('logs');
     const sendBtn = document.getElementById('sendBtn');
+
+    function toggleActionInput() {
+        const type = document.getElementById('actionType').value;
+        document.getElementById('appScreenContainer').style.display = type === 'app_screen' ? 'block' : 'none';
+        document.getElementById('urlContainer').style.display = type === 'external_url' ? 'block' : 'none';
+    }
+
+    function updatePreview() {
+        const title = document.getElementById('notifTitle').value || 'Saathi AI 🌱';
+        const subtitle = document.getElementById('notifSubtitle').value;
+        const body = document.getElementById('notifBody').value || 'Your notification message will appear here...';
+        const image = document.getElementById('notifImage').value;
+
+        document.getElementById('prevTitle').innerText = title;
+        document.getElementById('prevBody').innerText = body;
+        
+        document.getElementById('charCount').innerText = `${document.getElementById('notifBody').value.length} characters (Android usually truncates around 150)`;
+
+        const subEl = document.getElementById('prevSubtitle');
+        if (subtitle) {
+            subEl.innerText = subtitle;
+            subEl.style.display = 'block';
+        } else {
+            subEl.style.display = 'none';
+        }
+
+        const imgEl = document.getElementById('prevImage');
+        if (image) {
+            imgEl.src = image;
+            imgEl.style.display = 'block';
+            // Handle broken image links gracefully in preview
+            imgEl.onerror = () => { imgEl.style.display = 'none'; };
+        } else {
+            imgEl.style.display = 'none';
+        }
+    }
 
     function log(message, type = 'info') {
         const span = document.createElement('span');
@@ -182,81 +380,73 @@
 
     async function sendBroadcast() {
         const title = document.getElementById('notifTitle').value.trim();
+        const subtitle = document.getElementById('notifSubtitle').value.trim();
         const body = document.getElementById('notifBody').value.trim();
         const type = document.getElementById('notifType').value;
         const image = document.getElementById('notifImage').value.trim();
+        
+        const actionType = document.getElementById('actionType').value;
+        const screen = document.getElementById('notifScreen').value;
+        const url = document.getElementById('notifUrl').value.trim();
 
-        if (!title || !body) return alert("Please enter a Title and Body.");
+        if (!title || !body) return alert("Please enter a Header and Content Paragraph.");
 
         sendBtn.disabled = true;
-        sendBtn.innerText = "Processing...";
+        sendBtn.innerHTML = "Processing...";
         logsDiv.innerHTML = "";
         
         try {
-            log("Connecting to Supabase...", "info");
-            
-            // Initialize Supabase client
-            const supabase = window.supabase.createClient(SB_URL, SB_KEY);
+            log("Connecting to proxy server to fetch tokens...", "info");
+            const dbResponse = await fetch(`http://localhost:3000/api/tokens`);
 
-            // Fetch tokens from DB
-            log("Running query: SELECT expo_push_token FROM user_devices WHERE expo_push_token IS NOT NULL;", "info");
-            const { data, error } = await supabase
-                .from('user_devices')
-                .select('expo_push_token')
-                .not('expo_push_token', 'is', null);
-
-            if (error) throw new Error(error.message);
+            if (!dbResponse.ok) throw new Error(`HTTP Error: ${dbResponse.status}`);
+            const data = await dbResponse.json();
 
             if (!data || data.length === 0) {
-                log("No tokens found in database. Exiting.", "error");
-                sendBtn.disabled = false;
-                sendBtn.innerText = "Fetch Tokens & Send Broadcast";
+                log("No tokens found in database.", "error");
                 return;
             }
 
-            // Extract unique valid Expo tokens
             const rawTokens = data.map(d => d.expo_push_token);
             const validTokens = [...new Set(rawTokens.filter(t => t && t.startsWith('ExponentPushToken[')))];
 
-            log(`Extracted ${validTokens.length} valid unique Expo Push Tokens.`, "success");
+            log(`Found ${validTokens.length} active devices.`, "success");
 
-            if (validTokens.length === 0) {
-                log("No valid Expo tokens to send to.", "error");
-                sendBtn.disabled = false;
-                sendBtn.innerText = "Fetch Tokens & Send Broadcast";
-                return;
-            }
+            if (validTokens.length === 0) return;
 
-            // Build Messages
-            const messages = validTokens.map(token => ({
-                to: token,
-                sound: 'default',
-                title: title,
-                body: body,
-                priority: 'high',
-                channelId: type === 'alert' ? 'alerts' : 'default',
-                data: { type: type, image: image },
-                ...(image ? { image: image } : {}) // Pass image natively for Expo Android
-            }));
+            // Prepare routing data for the app
+            const payloadData = { type: type };
+            if (actionType === 'app_screen') payloadData.screen = screen;
+            if (actionType === 'external_url' && url) payloadData.url = url;
 
-            log("Sending payload to Expo Push API...", "info");
+            const messages = validTokens.map(token => {
+                const msg = {
+                    to: token,
+                    sound: 'default',
+                    title: title,
+                    body: body,
+                    priority: 'high',
+                    channelId: type === 'alert' ? 'alerts' : 'default',
+                    data: payloadData
+                };
+                if (subtitle) msg.subtitle = subtitle;
+                if (image) msg.image = image; // Android Hero Image
+                return msg;
+            });
 
-            // Chunk messages to avoid limits (max 100 per chunk usually, keeping it 50 for safety)
+            log("Transmitting payload to Expo servers...", "info");
+
             const CHUNK_SIZE = 50;
             let totalSuccess = 0;
             let totalFail = 0;
 
             for (let i = 0; i < messages.length; i += CHUNK_SIZE) {
                 const chunk = messages.slice(i, i + CHUNK_SIZE);
-                log(`Sending chunk ${Math.floor(i/CHUNK_SIZE) + 1}...`, "info");
+                log(`Sending batch ${Math.floor(i/CHUNK_SIZE) + 1}...`, "info");
                 
-                const response = await fetch('https://exp.host/--/api/v2/push/send', {
+                const response = await fetch('http://localhost:3000/api/send', {
                     method: 'POST',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Accept-encoding': 'gzip, deflate',
-                        'Content-Type': 'application/json',
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(chunk)
                 });
 
@@ -264,26 +454,29 @@
                 
                 if (result.data) {
                     const successCount = result.data.filter(r => r.status === 'ok').length;
-                    const errorCount = result.data.filter(r => r.status === 'error');
+                    const errors = result.data.filter(r => r.status === 'error');
                     
                     totalSuccess += successCount;
-                    totalFail += errorCount.length;
+                    totalFail += errors.length;
 
-                    errorCount.forEach(err => log(`Expo Error: ${err.message}`, "error"));
+                    errors.forEach(err => log(`Device Error: ${err.message}`, "error"));
                 }
             }
 
             log(`--- BROADCAST COMPLETE ---`, "success");
-            log(`Success: ${totalSuccess} devices received the push`, "success");
-            if (totalFail > 0) log(`Failed: ${totalFail} devices failed`, "error");
+            log(`Success: ${totalSuccess} devices`, "success");
+            if (totalFail > 0) log(`Failed: ${totalFail} devices`, "error");
 
         } catch (err) {
             log(`Error: ${err.message}`, "error");
         } finally {
             sendBtn.disabled = false;
-            sendBtn.innerText = "Fetch Tokens & Send Broadcast";
+            sendBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg> Launch Broadcast`;
         }
     }
+    
+    // Initialize preview
+    updatePreview();
 </script>
 </body>
 </html>

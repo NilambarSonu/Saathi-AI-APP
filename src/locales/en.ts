@@ -680,7 +680,7 @@ export const en = {
     },
     connect: {
       eyebrow: "05 / CONNECT",
-      title: "Talk to the Saathi AI team",
+      title: "Talk To Team",
       address: "FMU-TBI, Balasore, Odisha, India"
     },
     footer: {

@@ -1072,6 +1072,65 @@ export default function HistoryScreen({ navigation }: any) {
         </View>
       </ScrollView>
 
+      {/* Map Bottom Sheet Modal */}
+      <Modal
+        visible={isMapFullscreen}
+        animationType="none"
+        transparent={true}
+        onRequestClose={closeMapFullscreen}
+      >
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <View style={styles.modalOverlay}>
+            <Animated.View style={[styles.mapSheetContent, { backgroundColor: theme.surface }, mapModalAnimatedStyle]}>
+              <PanGestureHandler
+                onGestureEvent={onMapPanGesture}
+                onHandlerStateChange={onMapPanStateChange}
+              >
+                <Animated.View style={{ width: '100%', alignItems: 'center', paddingBottom: 10 }}>
+                  <View style={[styles.modalGrabber, { backgroundColor: isDark ? theme.sep2 : '#CBD5E1' }]} />
+                  <View style={[styles.modalHeader, { width: '100%', marginBottom: 0 }]}>
+                    <Text style={[styles.modalTitle, { color: COLORS_THEMED.title }]}>Field Locations</Text>
+                    <TouchableOpacity onPress={closeMapFullscreen} style={styles.closeButton}>
+                      <Ionicons name="close-circle-outline" size={28} color={COLORS_THEMED.subtitle} />
+                    </TouchableOpacity>
+                  </View>
+                </Animated.View>
+              </PanGestureHandler>
+
+              <View style={{ flex: 1, width: '100%' }}>
+                <MemoizedMap
+                  mapRef={fullMapRef}
+                  mapStyle={{ flex: 1 }}
+                  provider={Platform.OS === 'android' ? PROVIDER_GOOGLE : undefined}
+                  initialRegion={mapInitialRegion}
+                  mapType={
+                    mapMode === 'satellite'
+                      ? 'satellite'
+                      : (mapMode === 'standard'
+                        ? 'standard'
+                        : (Platform.OS === 'android' ? 'none' : 'standard'))
+                  }
+                  onMapReady={() => {}}
+                  showsUserLocation={true}
+                  showsMyLocationButton={true}
+                  scrollEnabled={true}
+                  zoomEnabled={true}
+                  zoomControlEnabled={false}
+                  rotateEnabled={false}
+                  pitchEnabled={false}
+                  moveOnMarkerPress={false}
+                  mapMode={mapMode}
+                  mapMarkers={mapMarkers}
+                  activeParameter={mapParameter}
+                  theme={theme}
+                  isDark={isDark}
+                />
+              </View>
+            </Animated.View>
+          </View>
+        </GestureHandlerRootView>
+      </Modal>
+
       {/* Details Modal */}
       <Modal
         visible={isModalVisible}
@@ -2244,5 +2303,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 20,
     paddingHorizontal: 4,
+  },
+  mapSheetContent: {
+    height: MAP_SHEET_HEIGHT,
+    width: '100%',
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    overflow: 'hidden',
+    position: 'absolute',
+    bottom: 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.1,
+    shadowRadius: 20,
+    elevation: 20,
   },
 });

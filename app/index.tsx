@@ -12,7 +12,8 @@ import Animated, {
   withRepeat,
   Easing,
   interpolate,
-  SharedValue
+  SharedValue,
+  FadeInUp
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useDarkModeTheme } from '@/context/ThemeContext';
@@ -37,7 +38,6 @@ export default function SplashScreen() {
   const particle3TranslateY = useSharedValue(0); // Stage 3
   const particleOpacity = useSharedValue(0); // Stage 3
   const glowLinesOpacity = useSharedValue(0); // Stage 4
-  const taglineOpacity = useSharedValue(0); // Stage 4
   const finalCompressScale = useSharedValue(1); // Stage 5
 
   useEffect(() => {
@@ -84,7 +84,6 @@ export default function SplashScreen() {
 
     // STAGE 4: AI Activation (4500ms - 6500ms)
     glowLinesOpacity.value = withDelay(4500, withTiming(1, { duration: 1500, easing: Easing.out(Easing.ease) }));
-    taglineOpacity.value = withDelay(5000, withTiming(1, { duration: 1500, easing: Easing.out(Easing.ease) }));
 
     // STAGE 5: Dashboard Transition (7000ms - 7800ms)
     finalCompressScale.value = withDelay(7000, withTiming(0.95, { duration: 800, easing: Easing.inOut(Easing.ease) }));
@@ -153,11 +152,6 @@ export default function SplashScreen() {
     transform: [{ scale: finalCompressScale.value }],
   }));
 
-  const taglineStyle = useAnimatedStyle(() => ({
-    opacity: taglineOpacity.value,
-    transform: [{ translateY: interpolate(taglineOpacity.value, [0, 1], [10, 0]) }],
-  }));
-
   const createParticleStyle = (translateYValue: SharedValue<number>, initialX: number) => {
     return useAnimatedStyle(() => {
       const progress = Math.abs(translateYValue.value / 80);
@@ -208,11 +202,19 @@ export default function SplashScreen() {
       </View>
 
       {/* Tagline */}
-      <Animated.View style={[styles.taglineContainer, taglineStyle]}>
-        <Text style={[styles.tagline, isDark && styles.taglineDark]} adjustsFontSizeToFit numberOfLines={1}>
-          The Organic Intelligence Platform
-        </Text>
-      </Animated.View>
+      <View style={styles.taglineContainer}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
+          {["Saathi", "AI", "The", "Organic", "Intelligence", "Platform"].map((word, i) => (
+            <Animated.Text
+              key={i}
+              entering={FadeInUp.delay(5000 + i * 250).duration(800)}
+              style={[styles.tagline, isDark && styles.taglineDark, { marginRight: 6 }]}
+            >
+              {word}
+            </Animated.Text>
+          ))}
+        </View>
+      </View>
     </View>
   );
 }

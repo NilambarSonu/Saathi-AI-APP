@@ -670,23 +670,6 @@ export default function ConnectScreen() {
           </View>
         </Animated.View>
 
-        {/* ── SESSION LOG ── */}
-        {logs.length > 0 && (
-          <View style={[s.logCard, { backgroundColor: isDark ? theme.surfaceAlt : '#0D1F12' }]}>
-            <Text style={[s.logTitle, { color: theme.success }]}>Session Log</Text>
-            {logs.slice(0, 10).map((entry, i) => (
-              <View key={i} style={s.logRow}>
-                <Text style={[s.logLevel, {
-                  color: entry.level === 'error' ? theme.error
-                       : entry.level === 'warn'  ? theme.warning : theme.success,
-                }]}>
-                  {entry.level.toUpperCase().padEnd(5)}
-                </Text>
-                <Text style={[s.logLine, { color: theme.textSecondary }]}>{entry.time}  {entry.message}</Text>
-              </View>
-            ))}
-          </View>
-        )}
 
         </ScrollView>
 

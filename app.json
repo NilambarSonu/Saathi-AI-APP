@@ -82,7 +82,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/Apk Logo-Photoroom.jpg",
+          "icon": "./assets/images/Apk_Logo_Padded.png",
           "color": "#C8AE88"
         }
       ]

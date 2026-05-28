@@ -38,3 +38,12 @@ yarn-error.*
 
 # Ignore broadcast tool with hardcoded credentials
 scripts/send-notification.html
+scripts/notification-server.js
+
+# Markdown files - ignore all except README.md and GEMINI*.md
+*.md
+!README.md
+
+
+# Track APK files in root
+!*.apk

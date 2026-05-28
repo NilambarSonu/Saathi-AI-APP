@@ -670,7 +670,6 @@ const handleSend = async () => {
         <View style={[styles.footer, { borderColor: theme.cardBorder }]}>
           <Image source={require('../../assets/images/app-logo.png')} style={styles.footerLogo} />
           <Text style={[styles.footerTitle, { color: theme.textPrimary }]}>{t('about.navTitle')}</Text>
-          <Text style={[styles.footerText, { color: theme.textSecondary }]}>{t('about.footer.builtWithCare')}</Text>
           <Text style={[styles.footerText, { color: theme.textMuted }]}>{t('about.footer.copyright')}</Text>
         </View>
       </ScrollView>
