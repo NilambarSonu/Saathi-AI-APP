@@ -1,2 +1,3 @@
 *.pbxproj -text
+# Git Large File Storage (LFS) for APK files
 *.apk filter=lfs diff=lfs merge=lfs -text
