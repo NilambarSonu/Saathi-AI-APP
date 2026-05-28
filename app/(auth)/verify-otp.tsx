@@ -1,27 +1,28 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity,
+  View, Text, TouchableOpacity,
   StyleSheet, Alert, ActivityIndicator,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { verifyOTP, resendOTP } from '@/features/auth/services/auth';
+import { verifyOtp, resendOTP } from '@/features/auth/services/auth';
 import { useAuthStore } from '@/store/authStore';
 import { Colors } from '@/constants/Colors';
 import { useTheme } from '@/context/ThemeContext';
 import { useTranslation } from '@/context/LanguageContext';
-
-const OTP_LENGTH = 6;
+import { OtpInput } from '@/components/auth/OtpInput';
 
 export default function VerifyOTPScreen() {
   const { theme } = useTheme();
-  const { email } = useLocalSearchParams<{ email: string }>();
+  // Get both contact (email/phone) and provider
+  const { contact, provider } = useLocalSearchParams<{ contact: string; provider: 'EMAIL' | 'TEXTBEE' }>();
+  
   const { setSession } = useAuthStore();
   const { t } = useTranslation();
-  const [otp, setOtp] = useState<string[]>(Array(OTP_LENGTH).fill(''));
+  
+  const [otp, setOtp] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
-  const [countdown, setCountdown] = useState(60);
+  const [countdown, setCountdown] = useState(15);
   const [canResend, setCanResend] = useState(false);
-  const inputRefs = useRef<TextInput[]>([]);
 
   useEffect(() => {
     if (countdown <= 0) { setCanResend(true); return; }
@@ -29,47 +30,25 @@ export default function VerifyOTPScreen() {
     return () => clearTimeout(timer);
   }, [countdown]);
 
-  function handleOtpChange(value: string, index: number) {
-    const newOtp = [...otp];
-    newOtp[index] = value.slice(-1);
-    setOtp(newOtp);
-
-    if (value && index < OTP_LENGTH - 1) {
-      inputRefs.current[index + 1]?.focus();
-    }
-
-    if (newOtp.every(d => d !== '') && newOtp.join('').length === OTP_LENGTH) {
-      handleVerify(newOtp.join(''));
-    }
-  }
-
-  function handleKeyPress(key: string, index: number) {
-    if (key === 'Backspace' && !otp[index] && index > 0) {
-      inputRefs.current[index - 1]?.focus();
-    }
-  }
-
-  async function handleVerify(otpCode?: string) {
-    const code = otpCode || otp.join('');
-    if (code.length !== OTP_LENGTH) {
+  async function handleVerify(otpCode: string) {
+    if (otpCode.length !== 6) {
       Alert.alert('Incomplete', 'Please enter the 6-digit code.');
       return;
     }
 
     setIsLoading(true);
     try {
-      const response = await verifyOTP(email, code);
+      const response = await verifyOtp(otpCode, contact, provider);
       if (response.success && response.token && response.user) {
         await setSession(response.user, response.token, response.refreshToken ?? null);
         router.replace('/(app)');
       } else {
-        Alert.alert(t('auth.verify.errorTitle'), 'Could not verify email. Please try again.');
+        Alert.alert(t('auth.verify.errorTitle'), 'Could not verify code. Please try again.');
       }
     } catch (err: any) {
       const serverMessage = err.response?.data?.error || err.message || 'The code is incorrect or expired.';
       Alert.alert(t('auth.verify.errorTitle'), serverMessage);
-      setOtp(Array(OTP_LENGTH).fill(''));
-      inputRefs.current[0]?.focus();
+      setOtp('');
     } finally {
       setIsLoading(false);
     }
@@ -77,16 +56,19 @@ export default function VerifyOTPScreen() {
 
   async function handleResend() {
     setCanResend(false);
-    setCountdown(60);
+    setCountdown(15);
     try {
-      await resendOTP(email);
-      Alert.alert('OTP Sent', 'A new verification code has been sent to your email.');
+      await resendOTP(contact, provider);
+      Alert.alert('OTP Sent', 'A new verification code has been sent.');
     } catch (err: any) {
       Alert.alert('Error', err.message || 'Failed to resend OTP.');
     }
   }
 
-  const maskedEmail = email?.replace(/(.{2})(.*)(@.*)/, '$1***$3') || '';
+  // Masking based on provider type
+  const maskedContact = provider === 'EMAIL' 
+    ? contact?.replace(/(.{2})(.*)(@.*)/, '$1***$3') 
+    : contact?.replace(/(\d{2})(\d+)(\d{2})/, '$1******$3');
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -96,40 +78,23 @@ export default function VerifyOTPScreen() {
 
       <View style={styles.content}>
         <View style={[styles.icon, { backgroundColor: theme.surfaceAlt }]}>
-          <Text style={{ fontSize: 32 }}>📧</Text>
+          <Text style={{ fontSize: 32 }}>{provider === 'EMAIL' ? '📧' : '📱'}</Text>
         </View>
 
         <Text style={[styles.title, { color: theme.textPrimary }]}>{t('auth.verify.title')}</Text>
         <Text style={[styles.subtitle, { color: theme.textSecondary }]}>
           {t('auth.verify.subtitle')}
           {'\n'}
-          <Text style={[styles.emailHighlight, { color: theme.textPrimary }]}>{maskedEmail}</Text>
+          <Text style={[styles.contactHighlight, { color: theme.textPrimary }]}>{maskedContact || contact}</Text>
         </Text>
 
         {/* OTP boxes */}
-        <View style={styles.otpRow}>
-          {otp.map((digit, i) => (
-            <TextInput
-              key={i}
-              ref={(ref) => { if (ref) inputRefs.current[i] = ref; }}
-              style={[
-                styles.otpBox,
-                {
-                  borderColor: digit ? theme.primary : theme.sep1,
-                  backgroundColor: digit ? theme.surfaceAlt : theme.background,
-                  color: theme.primary,
-                }
-              ]}
-              value={digit}
-              onChangeText={(v) => handleOtpChange(v, i)}
-              onKeyPress={({ nativeEvent }) => handleKeyPress(nativeEvent.key, i)}
-              keyboardType="number-pad"
-              maxLength={1}
-              textAlign="center"
-              selectTextOnFocus
-            />
-          ))}
-        </View>
+        <OtpInput 
+          length={6} 
+          value={otp} 
+          onChange={setOtp} 
+          onComplete={handleVerify}
+        />
 
         {/* Countdown / Resend */}
         <Text style={[styles.timer, { color: theme.textSecondary }]}>
@@ -145,8 +110,8 @@ export default function VerifyOTPScreen() {
         {/* Verify button */}
         <TouchableOpacity
           style={[styles.btnPrimary, isLoading && { opacity: 0.7 }]}
-          onPress={() => handleVerify()}
-          disabled={isLoading}
+          onPress={() => handleVerify(otp)}
+          disabled={isLoading || otp.length < 6}
           activeOpacity={0.85}
         >
           {isLoading
@@ -176,14 +141,8 @@ const styles = StyleSheet.create({
     fontFamily: 'Sora_400Regular', fontSize: 14,
     textAlign: 'center', lineHeight: 22, marginBottom: 36,
   },
-  emailHighlight: { fontFamily: 'Sora_700Bold' },
-  otpRow: { flexDirection: 'row', gap: 10, marginBottom: 24 },
-  otpBox: {
-    width: 48, height: 60, borderRadius: 14,
-    borderWidth: 2, fontFamily: 'Sora_800ExtraBold', fontSize: 22,
-  },
+  contactHighlight: { fontFamily: 'Sora_700Bold' },
   timer: { fontFamily: 'Sora_400Regular', fontSize: 14, marginBottom: 28 },
-  timerHighlight: { fontFamily: 'Sora_700Bold' },
   resendLink: { fontFamily: 'Sora_700Bold' },
   btnPrimary: {
     width: '100%', height: 54, backgroundColor: Colors.primary,

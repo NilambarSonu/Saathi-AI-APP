@@ -35,3 +35,6 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Ignore broadcast tool with hardcoded credentials
+scripts/send-notification.html

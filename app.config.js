@@ -34,19 +34,7 @@ module.exports = ({ config }) => {
           'ACCESS_FINE_LOCATION',
         ])
       ),
-      intentFilters: [
-        {
-          "action": "VIEW",
-          "autoVerify": true,
-          "data": [
-            {
-              "scheme": "saathiai",
-              "host": "oauth-callback"
-            }
-          ],
-          "category": ["BROWSABLE", "DEFAULT"]
-        }
-      ],
+
       config: {
         ...((config.android && config.android.config) || {}),
         googleMaps: {

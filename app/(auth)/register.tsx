@@ -7,7 +7,7 @@ import {
 } from 'react-native';
 import { FontAwesome } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { registerAccount, startSocialAuth } from '@/features/auth/services/auth';
+import { register, startSocialAuth } from '@/features/auth/services/auth';
 import { Colors } from '@/constants/Colors';
 import { useDarkModeTheme } from '@/context/ThemeContext';
 import { useTranslation } from '@/context/LanguageContext';
@@ -16,8 +16,11 @@ import { useAuthStore } from '@/store/authStore';
 export default function RegisterScreen() {
   const { theme } = useDarkModeTheme();
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [phone, setPhone] = useState('');
+  
+  // New State for Verification Selector
+  const [provider, setProvider] = useState<'EMAIL' | 'TEXTBEE'>('EMAIL');
+  const [contact, setContact] = useState('');
+  
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -59,10 +62,10 @@ export default function RegisterScreen() {
     checkStrength(text);
   };
 
-  async function handleSocialLogin(provider: 'google' | 'facebook' | 'x') {
-    setSocialLoading(provider);
+  async function handleSocialLogin(socialProvider: 'google' | 'facebook' | 'x') {
+    setSocialLoading(socialProvider);
     try {
-      const session = await startSocialAuth(provider);
+      const session = await startSocialAuth(socialProvider);
       await setSession(session.user, session.token, session.refreshToken ?? null);
       router.replace('/(app)');
     } catch (err: any) {
@@ -77,8 +80,8 @@ export default function RegisterScreen() {
       Alert.alert('Missing Name', 'Please enter your full name.');
       return;
     }
-    if (!email.trim() || !password) {
-      Alert.alert(t('auth.login.errorTitle'), t('auth.register.validationError'));
+    if (!contact.trim() || !password) {
+      Alert.alert(t('auth.login.errorTitle'), 'Please enter your contact details and password.');
       return;
     }
     if (password !== confirmPassword) {
@@ -92,22 +95,44 @@ export default function RegisterScreen() {
 
     setIsLoading(true);
     try {
-      const generatedUsername = name.toLowerCase().trim().replace(/\s+/g, '_');
-      const response = await registerAccount({
-        name: name.trim(),
-        username: generatedUsername,
-        email: email.trim(),
-        phone: phone.trim() || undefined,
+      const response = await register({
+        username: name.trim(),
+        contact: contact.trim(),
+        provider,
         password
       });
 
-      if (response.requiresOTP) {
-        router.push({
-          pathname: '/(auth)/verify-otp',
-          params: { email: response.email },
-        });
-      }
+      // Navigate to verify OTP, pass along the contact and provider
+      router.push({
+        pathname: '/(auth)/verify-otp',
+        params: { 
+          contact: contact.trim(), 
+          provider 
+        },
+      });
     } catch (err: any) {
+      const errorCode = err.response?.data?.code;
+      
+      if (errorCode === 'PHONE_EXISTS') {
+        console.log('[Register] Expected error: PHONE_EXISTS');
+        Alert.alert('Already Registered', 'This phone number is already registered. Please login instead.', [
+          { text: 'Go to Login', onPress: () => router.replace('/(auth)/login') },
+          { text: 'Cancel', style: 'cancel' }
+        ]);
+        setIsLoading(false);
+        return;
+      }
+      
+      if (errorCode === 'EMAIL_EXISTS') {
+        console.log('[Register] Expected error: EMAIL_EXISTS');
+        Alert.alert('Already Registered', 'This email is already registered. Please login instead.', [
+          { text: 'Go to Login', onPress: () => router.replace('/(auth)/login') },
+          { text: 'Cancel', style: 'cancel' }
+        ]);
+        setIsLoading(false);
+        return;
+      }
+
       console.error('[Register] Error:', err);
       const serverMessage = err.response?.data?.message || err.response?.data?.error;
       const errorMessage = serverMessage || err.message || t('auth.login.validationError');
@@ -162,32 +187,44 @@ export default function RegisterScreen() {
             />
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.email').toUpperCase()}</Text>
-          <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
-            <FontAwesome name="envelope" size={16} color={theme.textMuted} style={styles.inputIcon} />
-            <TextInput
-              style={[styles.inputField, { color: theme.textPrimary }]}
-              value={email}
-              onChangeText={setEmail}
-              placeholder="ramesh@gmail.com"
-              placeholderTextColor={theme.textMuted}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoComplete="email"
-            />
+          {/* New Provider Selector */}
+          <Text style={[styles.label, { color: theme.textSecondary, marginTop: 4 }]}>VERIFICATION METHOD</Text>
+          <View style={[styles.providerRow, { backgroundColor: theme.surfaceAlt }]}>
+            <TouchableOpacity 
+              style={[styles.providerTab, provider === 'EMAIL' && [styles.providerTabActive, { backgroundColor: theme.surface }]]}
+              onPress={() => { setProvider('EMAIL'); setContact(''); }}
+            >
+              <FontAwesome name="envelope" size={14} color={provider === 'EMAIL' ? theme.primary : theme.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={[styles.providerTabText, { color: provider === 'EMAIL' ? theme.primary : theme.textSecondary }]}>Email</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.providerTab, provider === 'TEXTBEE' && [styles.providerTabActive, { backgroundColor: theme.surface }]]}
+              onPress={() => { setProvider('TEXTBEE'); setContact(''); }}
+            >
+              <FontAwesome name="phone" size={14} color={provider === 'TEXTBEE' ? theme.primary : theme.textSecondary} style={{ marginRight: 6 }} />
+              <Text style={[styles.providerTabText, { color: provider === 'TEXTBEE' ? theme.primary : theme.textSecondary }]}>SMS</Text>
+            </TouchableOpacity>
           </View>
 
-          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.register.phone').toUpperCase()}</Text>
+          <Text style={[styles.label, { color: theme.textSecondary, marginTop: 8 }]}>
+            {provider === 'EMAIL' ? t('auth.register.email').toUpperCase() : t('auth.register.phone').toUpperCase()}
+          </Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
-            <FontAwesome name="phone" size={16} color={theme.textMuted} style={styles.inputIcon} />
+            <FontAwesome 
+              name={provider === 'EMAIL' ? 'envelope' : 'phone'} 
+              size={16} 
+              color={theme.textMuted} 
+              style={styles.inputIcon} 
+            />
             <TextInput
               style={[styles.inputField, { color: theme.textPrimary }]}
-              value={phone}
-              onChangeText={setPhone}
-              placeholder="+91 9876543210"
+              value={contact}
+              onChangeText={setContact}
+              placeholder={provider === 'EMAIL' ? "ramesh@gmail.com" : "+91 9876543210"}
               placeholderTextColor={theme.textMuted}
-              keyboardType="phone-pad"
-              autoComplete="tel"
+              keyboardType={provider === 'EMAIL' ? 'email-address' : 'phone-pad'}
+              autoCapitalize="none"
+              autoComplete={provider === 'EMAIL' ? 'email' : 'tel'}
             />
           </View>
 
@@ -360,6 +397,10 @@ const styles = StyleSheet.create({
   tab: { flex: 1, height: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 9 },
   tabActive: { elevation: 2 },
   tabText: { fontFamily: 'Sora_600SemiBold', fontSize: 14 },
+  providerRow: { flexDirection: 'row', borderRadius: 10, padding: 4, marginBottom: 16 },
+  providerTab: { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 8, flexDirection: 'row' },
+  providerTabActive: { elevation: 1 },
+  providerTabText: { fontFamily: 'Sora_600SemiBold', fontSize: 12 },
   label: {
     fontFamily: 'Sora_600SemiBold', fontSize: 11,
     letterSpacing: 0.6, marginBottom: 6, textTransform: 'uppercase',

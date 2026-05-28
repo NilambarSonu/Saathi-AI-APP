@@ -75,7 +75,7 @@ export const en = {
       title: "Forgot Password",
       subtitle: "Enter your email or phone to reset your password",
       emailOrPhone: "Email or Phone Number",
-      sendBtn: "Send Reset Link",
+      sendBtn: "Send Verification Code",
       backToLogin: "Back to Login",
       successTitle: "Link Sent",
       successDesc: "If the account exists, a recovery link has been sent.",

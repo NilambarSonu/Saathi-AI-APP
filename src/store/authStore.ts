@@ -152,7 +152,11 @@ export const useAuthStore = create<AuthState>((set, get) => {
           'Content-Type': 'application/json',
           'x-client-type': 'mobile',
         },
-        body: JSON.stringify({ usernameOrEmail, password, client: 'mobile' }),
+        body: JSON.stringify({ 
+          usernameOrEmail: usernameOrEmail.toLowerCase().trim(),
+          password, 
+          client: 'mobile' 
+        }),
       });
 
       const data = await res.json();

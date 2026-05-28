@@ -22,7 +22,7 @@ import LottieView from 'lottie-react-native';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn, FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useLocalSearchParams } from 'expo-router';
-import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import * as Speech from 'expo-speech';
@@ -235,47 +235,59 @@ Please provide:
     }
   };
 
-  const handleAttachDocument = async (
-    typeFilter: string[] = ['*/*'],
-    typeState: 'image' | 'file' = 'file'
-  ) => {
+  const handleImagePick = async (source: 'camera' | 'gallery') => {
     try {
-      const result = await DocumentPicker.getDocumentAsync({
-        type: typeFilter,
-        copyToCacheDirectory: true,
-      });
-
-      if (result.canceled) return;
-
-      const file = result.assets[0];
-      let content: any = null;
-
-      if (typeState === 'file') {
-        try {
-          const rawText = await FileSystem.readAsStringAsync(file.uri, { encoding: 'utf8' });
-          try {
-            content = JSON.parse(rawText);
-          } catch {
-            content = rawText;
-          }
-        } catch {
-          content = 'Unreadable content';
+      let result;
+      if (source === 'camera') {
+        const { status } = await ImagePicker.requestCameraPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Sorry, we need camera permissions to make this work!');
+          return;
         }
+        result = await ImagePicker.launchCameraAsync({
+          mediaTypes: 'images',
+          allowsEditing: true,
+          quality: 0.8,
+        });
       } else {
-        content = file.uri;
+        const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission needed', 'Sorry, we need camera roll permissions to make this work!');
+          return;
+        }
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: 'images',
+          allowsEditing: true,
+          quality: 0.8,
+        });
       }
 
-      setFileAttachment({
-        name: file.name,
-        content,
-        uri: file.uri,
-        mimeType: file.mimeType || 'unknown',
-        type: typeState,
-      });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const file = result.assets[0];
+        setFileAttachment({
+          name: file.fileName || file.uri.split('/').pop() || 'image.jpg',
+          content: file.uri,
+          uri: file.uri,
+          mimeType: file.mimeType || 'image/jpeg',
+          type: 'image',
+        });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+    } catch (error) {
       Alert.alert('Attachment Error', 'Unable to attach this file.');
     }
+  };
+
+  const promptImageSource = () => {
+    Alert.alert(
+      'Attach Image',
+      'Choose image source',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Take Photo', onPress: () => handleImagePick('camera') },
+        { text: 'Choose from Gallery', onPress: () => handleImagePick('gallery') },
+      ]
+    );
   };
 
   return (
@@ -293,8 +305,8 @@ Please provide:
               <Ionicons name="chevron-back" size={24} color={theme.textPrimary} />
             </TouchableOpacity>
             <View style={styles.headerTitleContainer}>
-              <View style={[styles.botAvatarOuter, { backgroundColor: theme.fillGreen }]}>
-                <Image source={require('assets/images/app-logo.png')} style={styles.botAvatarInner} />
+              <View style={[styles.botAvatarOuter, { backgroundColor: '#F2E3D5' }]}>
+                <Image source={require('assets/images/Apk_Logo_Transparent.png')} style={styles.botAvatarInner} />
                 <View style={[styles.onlineDot, error ? { backgroundColor: theme.error } : { backgroundColor: theme.success }, { borderColor: theme.surface }]} />
               </View>
               <View>
@@ -399,8 +411,8 @@ Please provide:
                   style={[styles.messageRow, isUser ? styles.messageRowUser : styles.messageRowAI]}
                 >
                   {!isUser && (
-                    <View style={[styles.msgAvatarAI, { backgroundColor: theme.fillGreen }]}>
-                      <Image source={require('assets/images/app-logo.png')} style={{ width: 18, height: 18 }} />
+                    <View style={[styles.msgAvatarAI, { backgroundColor: '#F2E3D5' }]}>
+                      <Image source={require('assets/images/Apk_Logo_Transparent.png')} style={{ width: 22, height: 22 }} />
                     </View>
                   )}
                   <View
@@ -424,8 +436,8 @@ Please provide:
 
           {isLoading && (
             <Animated.View entering={FadeInUp} style={[styles.messageRow, styles.messageRowAI]}>
-              <View style={[styles.msgAvatarAI, { backgroundColor: theme.fillGreen }]}>
-                <Image source={require('assets/images/app-logo.png')} style={{ width: 18, height: 18 }} />
+              <View style={[styles.msgAvatarAI, { backgroundColor: '#F2E3D5' }]}>
+                <Image source={require('assets/images/Apk_Logo_Transparent.png')} style={{ width: 22, height: 22 }} />
               </View>
               <View style={[styles.msgBubble, styles.messageBubbleTyping, { backgroundColor: theme.surface }]}>
                 <ActivityIndicator size="small" color={theme.purple} style={{ marginRight: 8 }} />
@@ -465,14 +477,8 @@ Please provide:
           ]}
         >
           <View style={styles.inputWrapper}>
-            <TouchableOpacity style={styles.iconBtn} onPress={() => handleAttachDocument(['image/*'], 'image')}>
-              <Ionicons name="image-outline" size={22} color={theme.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.iconBtn}
-              onPress={() => handleAttachDocument(['application/json', 'text/csv', 'application/pdf'], 'file')}
-            >
-              <Feather name="paperclip" size={20} color={theme.textSecondary} />
+            <TouchableOpacity style={styles.iconBtn} onPress={promptImageSource}>
+              <Ionicons name="camera-outline" size={22} color={theme.textSecondary} />
             </TouchableOpacity>
 
             <TextInput
@@ -570,14 +576,14 @@ const styles = StyleSheet.create({
   },
   headerTitleContainer: { flexDirection: 'row', alignItems: 'center' },
   botAvatarOuter: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   },
-  botAvatarInner: { width: 20, height: 20 },
+  botAvatarInner: { width: 34, height: 34 },
   onlineDot: {
     position: 'absolute',
     bottom: -2,

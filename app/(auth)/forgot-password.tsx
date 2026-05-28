@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, ScrollView, ActivityIndicator,
@@ -10,50 +10,84 @@ import { Colors } from '@/constants/Colors';
 import { useDarkModeTheme } from '@/context/ThemeContext';
 import { useTranslation } from '@/context/LanguageContext';
 import {
-  sendOtp,
-  verifyOtp,
-  sendPasswordChangeOtp,
-  changePassword,
-  saveSession,
+  forgotPassword,
+  resetPassword,
 } from '@/features/auth/services/auth';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { FontAwesome } from '@expo/vector-icons';
 
-// ─────────────────────────────────────────────────────────────────
-// Forgot Password — 4-step flow (no dedicated endpoint needed)
-//
-// Step 1 (email)  → POST /auth/send-otp { email, purpose: "login" }
-// Step 2 (otp)    → POST /auth/verify-otp { otp, email, client: "mobile" }
-//                    ↳ returns { token, refreshToken, user } — temporarily stored
-// Step 3 (change) → POST /auth/send-password-change-otp  (Bearer token)
-//                    ↳ returns { otpId }
-// Step 4 (newpwd) → POST /auth/change-password { otpId, otp: changeOtp, newPassword }
-// ─────────────────────────────────────────────────────────────────
-
-type Step = 'email' | 'verify' | 'change_otp' | 'new_password';
+type Step = 'contact' | 'reset';
 
 export default function ForgotPasswordScreen() {
   const { theme, isDark } = useDarkModeTheme();
-  const [email, setEmail] = useState('');
+  
+  const [provider, setProvider] = useState<'EMAIL' | 'TEXTBEE'>('EMAIL');
+  const [contact, setContact] = useState('');
+  
   const [otp, setOtp] = useState('');
-  const [changeOtp, setChangeOtp] = useState('');
-  const [otpId, setOtpId] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [step, setStep] = useState<Step>('email');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  
+  const [step, setStep] = useState<Step>('contact');
   const [isLoading, setIsLoading] = useState(false);
   const { t } = useTranslation();
 
-  // ── Step 1: Send login OTP to email ──────────────────────────────
+  const [passwordStrength, setPasswordStrength] = useState({ score: 0, label: '', color: theme.textSecondary });
+  const [countdown, setCountdown] = useState(15);
+  const [canResend, setCanResend] = useState(false);
+
+  useEffect(() => {
+    if (step !== 'reset') return;
+    if (countdown <= 0) { setCanResend(true); return; }
+    const timer = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, step]);
+
+  const checkStrength = (pass: string) => {
+    let score = 0;
+    if (pass.length >= 8) score++;
+    if (/[A-Z]/.test(pass)) score++;
+    if (/[a-z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+
+    let label = '';
+    let color = theme.error;
+    if (pass.length === 0) {
+      label = '';
+      color = theme.textSecondary;
+    } else if (score <= 2) {
+      label = 'Weak';
+      color = theme.error;
+    } else if (score <= 4) {
+      label = 'Fair';
+      color = theme.warning;
+    } else {
+      label = 'Strong';
+      color = theme.success;
+    }
+    setPasswordStrength({ score, label, color });
+  };
+
+  const handlePasswordChange = (text: string) => {
+    setNewPassword(text);
+    checkStrength(text);
+  };
+
+  // ── Step 1: Send OTP to email/phone ──────────────────────────────
   async function handleSendOtp() {
-    if (!email.trim()) {
-      Alert.alert('Missing Email', 'Please enter your email address.');
+    if (!contact.trim()) {
+      Alert.alert('Missing Contact', 'Please enter your email or phone number.');
       return;
     }
     setIsLoading(true);
     try {
-      await sendOtp(email.trim(), 'login');
-      Alert.alert('OTP Sent', 'Please check your email for the 6-digit verification code.');
-      setStep('verify');
+      await forgotPassword(contact.trim(), provider);
+      Alert.alert('OTP Sent', 'Please check your messages for the 6-digit verification code.');
+      setStep('reset');
+      setCountdown(15);
+      setCanResend(false);
     } catch (err: any) {
       Alert.alert('Error', err?.message || 'Failed to send OTP. Please try again.');
     } finally {
@@ -61,48 +95,21 @@ export default function ForgotPasswordScreen() {
     }
   }
 
-  // ── Step 2: Verify OTP → get temp token ─────────────────────────
-  async function handleVerifyOtp() {
-    if (!otp.trim() || otp.trim().length !== 6) {
-      Alert.alert('Invalid Code', 'Please enter the 6-digit code from your email.');
-      return;
-    }
-    setIsLoading(true);
+  async function handleResendOtp() {
+    setCanResend(false);
+    setCountdown(15);
     try {
-      // verifyOtp returns { success, token, refreshToken, user }
-      const response = await verifyOtp(otp.trim(), email.trim());
-
-      if (!response.success || !response.token) {
-        throw new Error('OTP verification did not return a token.');
-      }
-
-      // Temporarily store token so sendPasswordChangeOtp can use it
-      await AsyncStorage.setItem('saathi_token', response.token);
-      if (response.refreshToken) {
-        await AsyncStorage.setItem('saathi_refresh_token', response.refreshToken);
-      }
-
-      // Step 3: now request the change-password OTP
-      const changeOtpResponse = await sendPasswordChangeOtp();
-      setOtpId(changeOtpResponse.otpId);
-
-      Alert.alert(
-        'Security Code Sent',
-        'A password-change verification code has been sent to your email.'
-      );
-      setStep('new_password');
+      await forgotPassword(contact.trim(), provider);
+      Alert.alert('OTP Sent', 'A new verification code has been sent.');
     } catch (err: any) {
-      Alert.alert('Invalid OTP', err?.message || 'The code is incorrect or expired.');
-      setOtp('');
-    } finally {
-      setIsLoading(false);
+      Alert.alert('Error', err.message || 'Failed to resend OTP.');
     }
   }
 
-  // ── Step 4: Set new password ──────────────────────────────────────
+  // ── Step 2: Reset password ──────────────────────────────────────
   async function handleResetPassword() {
-    if (!changeOtp.trim() || changeOtp.trim().length !== 6) {
-      Alert.alert('Missing Code', 'Please enter the 6-digit change-password code from your email.');
+    if (!otp.trim() || otp.trim().length !== 6) {
+      Alert.alert('Missing Code', 'Please enter the 6-digit code from your email or SMS.');
       return;
     }
     if (!newPassword.trim() || !confirmPassword.trim()) {
@@ -120,10 +127,7 @@ export default function ForgotPasswordScreen() {
 
     setIsLoading(true);
     try {
-      await changePassword(otpId, changeOtp.trim(), newPassword.trim());
-
-      // Clean up temporary token
-      await AsyncStorage.multiRemove(['saathi_token', 'saathi_refresh_token']);
+      await resetPassword(contact.trim(), provider, otp.trim(), newPassword.trim(), confirmPassword.trim());
 
       Alert.alert(
         '✅ Password Reset!',
@@ -138,15 +142,8 @@ export default function ForgotPasswordScreen() {
   }
 
   // Dynamic hero copy
-  const heroTitle =
-    step === 'email' ? t('auth.forgot.title') :
-    step === 'verify' ? t('auth.verify.title') :
-    'Set New Password';
-
-  const heroSub =
-    step === 'email' ? t('auth.forgot.subtitle') :
-    step === 'verify' ? t('auth.verify.subtitle') :
-    'Enter the security code & choose a strong password.';
+  const heroTitle = step === 'contact' ? t('auth.forgot.title') : 'Set New Password';
+  const heroSub = step === 'contact' ? t('auth.forgot.subtitle') : 'Enter the security code & choose a strong password.';
 
   return (
     <KeyboardAvoidingView
@@ -182,20 +179,45 @@ export default function ForgotPasswordScreen() {
         {/* Card */}
         <View style={[styles.card, { backgroundColor: theme.surface }]}>
 
-          {/* ── Step 1: Email ── */}
-          {step === 'email' && (
+          {/* ── Step 1: Contact ── */}
+          {step === 'contact' && (
             <>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.forgot.emailOrPhone').toUpperCase()}</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                autoComplete="email"
-              />
+              {/* Provider Selector */}
+              <Text style={[styles.label, { color: theme.textSecondary }]}>RECOVERY METHOD</Text>
+              <View style={[styles.providerRow, { backgroundColor: theme.surfaceAlt }]}>
+                <TouchableOpacity 
+                  style={[styles.providerTab, provider === 'EMAIL' && [styles.providerTabActive, { backgroundColor: theme.surface }]]}
+                  onPress={() => { setProvider('EMAIL'); setContact(''); }}
+                >
+                  <FontAwesome name="envelope" size={14} color={provider === 'EMAIL' ? theme.primary : theme.textSecondary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.providerTabText, { color: provider === 'EMAIL' ? theme.primary : theme.textSecondary }]}>Email</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.providerTab, provider === 'TEXTBEE' && [styles.providerTabActive, { backgroundColor: theme.surface }]]}
+                  onPress={() => { setProvider('TEXTBEE'); setContact(''); }}
+                >
+                  <FontAwesome name="phone" size={14} color={provider === 'TEXTBEE' ? theme.primary : theme.textSecondary} style={{ marginRight: 6 }} />
+                  <Text style={[styles.providerTabText, { color: provider === 'TEXTBEE' ? theme.primary : theme.textSecondary }]}>SMS</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.label, { color: theme.textSecondary }]}>
+                {provider === 'EMAIL' ? t('auth.register.email').toUpperCase() : t('auth.register.phone').toUpperCase()}
+              </Text>
+              <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border }]}>
+                <FontAwesome name={provider === 'EMAIL' ? 'envelope' : 'phone'} size={16} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.inputField, { color: theme.textPrimary }]}
+                  value={contact}
+                  onChangeText={setContact}
+                  placeholder={provider === 'EMAIL' ? "ramesh@gmail.com" : "+91 9876543210"}
+                  placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
+                  keyboardType={provider === 'EMAIL' ? 'email-address' : 'phone-pad'}
+                  autoCapitalize="none"
+                  autoComplete={provider === 'EMAIL' ? 'email' : 'tel'}
+                />
+              </View>
+
               <TouchableOpacity
                 style={[styles.btnPrimary, isLoading && styles.btnDisabled]}
                 onPress={handleSendOtp}
@@ -209,77 +231,127 @@ export default function ForgotPasswordScreen() {
             </>
           )}
 
-          {/* ── Step 2: Verify login OTP ── */}
-          {step === 'verify' && (
+          {/* ── Step 2: Reset Password ── */}
+          {step === 'reset' && (
             <>
               <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-                Enter the 6-digit code sent to <Text style={[styles.emailHighlight, { color: theme.textPrimary }]}>{email}</Text>
-              </Text>
-              <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.verify.title').toUpperCase()}</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
-                value={otp}
-                onChangeText={setOtp}
-                placeholder={t('auth.verify.otpPlaceholder')}
-                placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-              <TouchableOpacity
-                style={[styles.btnPrimary, isLoading && styles.btnDisabled]}
-                onPress={handleVerifyOtp}
-                disabled={isLoading}
-                activeOpacity={0.85}
-              >
-                {isLoading
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.btnPrimaryText}>{t('auth.verify.verifyBtn')} →</Text>}
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setStep('email')} style={styles.backLink}>
-                <Text style={[styles.backLinkText, { color: theme.primary }]}>← Change Email</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {/* ── Step 3+4: New password + change OTP ── */}
-          {step === 'new_password' && (
-            <>
-              <Text style={[styles.infoText, { color: theme.textSecondary }]}>
-                Check your email for a <Text style={[styles.emailHighlight, { color: theme.textPrimary }]}>password-change code</Text>, then enter it below with your new password.
+                Check your messages for a <Text style={[styles.contactHighlight, { color: theme.textPrimary }]}>security code</Text>, then enter it below with your new password.
               </Text>
 
-              <Text style={[styles.label, { color: theme.textSecondary }]}>SECURITY CODE (from email)</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
-                value={changeOtp}
-                onChangeText={setChangeOtp}
-                placeholder="Enter 6-digit code"
-                placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
-                keyboardType="number-pad"
-                maxLength={6}
-              />
+              <Text style={[styles.label, { color: theme.textSecondary }]}>SECURITY CODE (from {provider === 'EMAIL' ? 'email' : 'SMS'})</Text>
+              <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border }]}>
+                <FontAwesome name="shield" size={16} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.inputField, { color: theme.textPrimary }]}
+                  value={otp}
+                  onChangeText={setOtp}
+                  placeholder="Enter 6-digit code"
+                  placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+              </View>
 
-              <Text style={[styles.label, { color: theme.textSecondary }]}>NEW PASSWORD</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
-                value={newPassword}
-                onChangeText={setNewPassword}
-                placeholder="Enter new password (min 8 chars)"
-                placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
-                secureTextEntry
-                autoComplete="password-new"
-              />
+              <Text style={[styles.timer, { color: theme.textSecondary, marginBottom: 16 }]}>
+                {canResend ? (
+                  <Text style={[styles.resendLink, { color: theme.primary }]} onPress={handleResendOtp}>
+                    Resend Code
+                  </Text>
+                ) : (
+                  <>Resend code in 00:{countdown.toString().padStart(2, '0')}</>
+                )}
+              </Text>
+
+              <Text style={[styles.label, { color: theme.textSecondary }]}>NEW PASSWORD</Text>>
+              <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border }]}>
+                <FontAwesome name="lock" size={16} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.inputField, { color: theme.textPrimary }]}
+                  value={newPassword}
+                  onChangeText={handlePasswordChange}
+                  placeholder="Enter new password (min 8 chars)"
+                  placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
+                  secureTextEntry={!showPassword}
+                  autoComplete="password-new"
+                />
+                <TouchableOpacity onPress={() => setShowPassword(!showPassword)} style={styles.eyeBtn}>
+                  <FontAwesome name={showPassword ? 'eye-slash' : 'eye'} size={18} color={theme.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {newPassword.length > 0 && (
+                <>
+                  <View style={styles.strengthContainer}>
+                    <View style={[styles.strengthBarBackground, { backgroundColor: isDark ? theme.sep2 : Colors.border }]}>
+                      <View style={[styles.strengthBar, { width: `${(passwordStrength.score / 5) * 100}%`, backgroundColor: passwordStrength.color }]} />
+                    </View>
+                    <Text style={[styles.strengthText, { color: passwordStrength.color }]}>{passwordStrength.label}</Text>
+                  </View>
+
+                  <View style={styles.requirementsContainer}>
+                    <View style={styles.requirementItem}>
+                      <FontAwesome
+                        name={newPassword.length >= 8 ? 'check-circle' : 'circle-o'}
+                        size={12}
+                        color={newPassword.length >= 8 ? theme.success : theme.textMuted}
+                      />
+                      <Text style={[styles.requirementText, { color: theme.textMuted }, newPassword.length >= 8 && { color: theme.success, fontFamily: 'Sora_600SemiBold' }]}>
+                        At least 8 characters
+                      </Text>
+                    </View>
+                    <View style={styles.requirementItem}>
+                      <FontAwesome
+                        name={/[A-Z]/.test(newPassword) ? 'check-circle' : 'circle-o'}
+                        size={12}
+                        color={/[A-Z]/.test(newPassword) ? theme.success : theme.textMuted}
+                      />
+                      <Text style={[styles.requirementText, { color: theme.textMuted }, /[A-Z]/.test(newPassword) && { color: theme.success, fontFamily: 'Sora_600SemiBold' }]}>
+                        Contains uppercase letter
+                      </Text>
+                    </View>
+                    <View style={styles.requirementItem}>
+                      <FontAwesome
+                        name={/[0-9]/.test(newPassword) ? 'check-circle' : 'circle-o'}
+                        size={12}
+                        color={/[0-9]/.test(newPassword) ? theme.success : theme.textMuted}
+                      />
+                      <Text style={[styles.requirementText, { color: theme.textMuted }, /[0-9]/.test(newPassword) && { color: theme.success, fontFamily: 'Sora_600SemiBold' }]}>
+                        Contains a number
+                      </Text>
+                    </View>
+                  </View>
+                </>
+              )}
 
               <Text style={[styles.label, { color: theme.textSecondary }]}>CONFIRM PASSWORD</Text>
-              <TextInput
-                style={[styles.input, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border, color: theme.textPrimary }]}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Confirm new password"
-                placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
-                secureTextEntry
-                autoComplete="password-new"
-              />
+              <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: isDark ? theme.sep2 : Colors.border }]}>
+                <FontAwesome name="lock" size={16} color={theme.textMuted} style={styles.inputIcon} />
+                <TextInput
+                  style={[styles.inputField, { color: theme.textPrimary }]}
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  placeholder="Confirm new password"
+                  placeholderTextColor={isDark ? theme.textMuted : '#B0C4B8'}
+                  secureTextEntry={!showConfirmPassword}
+                  autoComplete="password-new"
+                />
+                <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn}>
+                  <FontAwesome name={showConfirmPassword ? 'eye-slash' : 'eye'} size={18} color={theme.textMuted} />
+                </TouchableOpacity>
+              </View>
+
+              {confirmPassword.length > 0 && (
+                <View style={styles.matchContainer}>
+                  <FontAwesome
+                    name={newPassword === confirmPassword ? 'check-circle' : 'times-circle'}
+                    size={14}
+                    color={newPassword === confirmPassword ? theme.success : theme.error}
+                  />
+                  <Text style={[styles.matchText, { color: newPassword === confirmPassword ? theme.success : theme.error }]}>
+                    {newPassword === confirmPassword ? 'Passwords match' : 'Passwords do not match'}
+                  </Text>
+                </View>
+              )}
 
               <TouchableOpacity
                 style={[styles.btnPrimary, isLoading && styles.btnDisabled]}
@@ -290,6 +362,10 @@ export default function ForgotPasswordScreen() {
                 {isLoading
                   ? <ActivityIndicator color="#fff" />
                   : <Text style={styles.btnPrimaryText}>Reset Password ✓</Text>}
+              </TouchableOpacity>
+              
+              <TouchableOpacity onPress={() => setStep('contact')} style={styles.backLink}>
+                <Text style={[styles.backLinkText, { color: theme.primary }]}>← Change contact method</Text>
               </TouchableOpacity>
             </>
           )}
@@ -351,19 +427,56 @@ const styles = StyleSheet.create({
     fontFamily: 'Sora_400Regular', fontSize: 13,
     color: Colors.textSecondary, marginBottom: 20, lineHeight: 20,
   },
-  emailHighlight: { fontFamily: 'Sora_700Bold', color: Colors.textPrimary },
+  contactHighlight: { fontFamily: 'Sora_700Bold', color: Colors.textPrimary },
+  providerRow: { flexDirection: 'row', borderRadius: 10, padding: 4, marginBottom: 16 },
+  providerTab: { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 8, flexDirection: 'row' },
+  providerTabActive: { elevation: 1 },
+  providerTabText: { fontFamily: 'Sora_600SemiBold', fontSize: 12 },
   label: {
     fontFamily: 'Sora_600SemiBold', fontSize: 11,
     color: Colors.textSecondary, letterSpacing: 0.6,
     marginBottom: 6, textTransform: 'uppercase',
   },
-  input: {
-    height: 52, backgroundColor: Colors.background,
-    borderWidth: 1.5, borderColor: Colors.border,
-    borderRadius: 14, paddingHorizontal: 16,
-    fontFamily: 'Sora_400Regular', fontSize: 14,
-    color: Colors.textPrimary, marginBottom: 16,
+  inputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 52,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    marginBottom: 16,
   },
+  inputIcon: { marginRight: 12 },
+  inputField: {
+    flex: 1,
+    fontFamily: 'Sora_400Regular',
+    fontSize: 14,
+    height: '100%',
+    padding: 0,
+  },
+  eyeBtn: { padding: 8, marginRight: -8 },
+  strengthContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: -12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  strengthBarBackground: {
+    height: 4,
+    borderRadius: 2,
+    flex: 1,
+    overflow: 'hidden',
+  },
+  strengthBar: { height: '100%', borderRadius: 2 },
+  strengthText: { fontFamily: 'Sora_600SemiBold', fontSize: 10, minWidth: 40, textAlign: 'right' },
+  matchContainer: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -12, marginBottom: 12 },
+  matchText: { fontFamily: 'Sora_600SemiBold', fontSize: 10 },
+  requirementsContainer: { marginBottom: 16, paddingLeft: 4 },
+  requirementItem: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+  requirementText: { fontFamily: 'Sora_400Regular', fontSize: 11 },
+  timer: { fontFamily: 'Sora_600SemiBold', fontSize: 13, marginTop: 4, textAlign: 'right' },
+  resendLink: { fontFamily: 'Sora_700Bold' },
   btnPrimary: {
     height: 54, backgroundColor: Colors.primary,
     borderRadius: 16, alignItems: 'center',

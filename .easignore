@@ -1,0 +1,17 @@
+# Exclude node_modules and build artifacts to reduce upload size
+node_modules/
+.git/
+.gradle/
+android/build/
+android/.gradle/
+ios/Pods/
+ios/build/
+dist/
+build/
+.next/
+.expo/
+.DS_Store
+*.log
+*.lock
+.env.local
+.env.*.local

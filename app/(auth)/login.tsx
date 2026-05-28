@@ -152,14 +152,14 @@ export default function LoginScreen() {
           </TouchableOpacity>
 
           {/* Form */}
-          <Text style={[styles.label, { color: theme.textSecondary }]}>{t('auth.login.usernameOrEmail').toUpperCase()}</Text>
+          <Text style={[styles.label, { color: theme.textSecondary }]}>EMAIL, USERNAME, OR PHONE</Text>
           <View style={[styles.inputContainer, { backgroundColor: theme.background, borderColor: theme.sep1 }]}>
             <FontAwesome name="user" size={16} color={theme.textMuted} style={styles.inputIcon} />
             <TextInput
               style={[styles.input, { color: theme.textPrimary }]}
               value={usernameOrEmail}
               onChangeText={setUsernameOrEmail}
-              placeholder={t('auth.login.usernameOrEmail')}
+              placeholder="Email, Username, or Phone"
               placeholderTextColor={theme.textMuted}
               autoCapitalize="none"
               keyboardType="email-address"

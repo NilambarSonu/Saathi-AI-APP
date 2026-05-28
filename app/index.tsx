@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, Image, Dimensions } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Animated, { 
@@ -9,208 +9,210 @@ import Animated, {
   withTiming, 
   withSequence,
   withDelay,
-  withRepeat
+  withRepeat,
+  Easing,
+  interpolate,
+  SharedValue
 } from 'react-native-reanimated';
-import { Colors } from '@/constants/Colors';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useDarkModeTheme } from '@/context/ThemeContext';
 import { useAuthStore } from '@/store/authStore';
 
+const { width, height } = Dimensions.get('window');
+
+// Premium 5-Stage Farmer-Friendly Intro Animation
 export default function SplashScreen() {
   const router = useRouter();
-  const { theme, isDark } = useDarkModeTheme();
-  const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+  const { isDark } = useDarkModeTheme();
 
-  // Core Entrance Animations
-  const logoScale = useSharedValue(0.5);
-  const logoOpacity = useSharedValue(0);
-  const titleOpacity = useSharedValue(0);
-  const titleTranslateY = useSharedValue(20);
-  const taglineOpacity = useSharedValue(0);
-  const dot1Opacity = useSharedValue(0.3);
-  const dot2Opacity = useSharedValue(0.3);
-  const dot3Opacity = useSharedValue(0.3);
-
-  // Concentric Scanning Waves Animations
-  const wave1Scale = useSharedValue(0.8);
-  const wave1Opacity = useSharedValue(0);
-  const wave2Scale = useSharedValue(0.8);
-  const wave2Opacity = useSharedValue(0);
-  const wave3Scale = useSharedValue(0.8);
-  const wave3Opacity = useSharedValue(0);
+  // Animations
+  const bgOpacity = useSharedValue(0); // Stage 1
+  const logoOpacity = useSharedValue(0); // Stage 2
+  const logoScale = useSharedValue(0.85); // Stage 2
+  const logoFloat = useSharedValue(0); // Stage 2 (Floating)
+  const pulseScale = useSharedValue(1); // Stage 3
+  const pulseOpacity = useSharedValue(0); // Stage 3
+  const particle1TranslateY = useSharedValue(0); // Stage 3
+  const particle2TranslateY = useSharedValue(0); // Stage 3
+  const particle3TranslateY = useSharedValue(0); // Stage 3
+  const particleOpacity = useSharedValue(0); // Stage 3
+  const glowLinesOpacity = useSharedValue(0); // Stage 4
+  const taglineOpacity = useSharedValue(0); // Stage 4
+  const finalCompressScale = useSharedValue(1); // Stage 5
 
   useEffect(() => {
-    // 1. Logo Entrance (Smooth premium spring and fade)
-    logoScale.value = withDelay(100, withSpring(1, { damping: 13, stiffness: 80 }));
-    logoOpacity.value = withDelay(100, withTiming(1, { duration: 600 }));
+    // STAGE 1: Earth Glow (0ms - 2000ms)
+    bgOpacity.value = withTiming(1, { duration: 2000, easing: Easing.out(Easing.ease) });
 
-    // 2. Radiating Waves Loops (Scanning soil intelligence effect)
-    // Wave 1
-    wave1Scale.value = withRepeat(
-      withSequence(withTiming(0.8, { duration: 0 }), withTiming(2.6, { duration: 2400 })),
+    // STAGE 2: Logo Appear (1200ms - 3200ms)
+    logoOpacity.value = withDelay(1200, withTiming(1, { duration: 2000, easing: Easing.out(Easing.cubic) }));
+    logoScale.value = withDelay(1200, withSpring(1, { damping: 18, stiffness: 45 }));
+    // Subtle floating animation
+    logoFloat.value = withDelay(2000, withRepeat(
+      withSequence(
+        withTiming(-5, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(5, { duration: 3000, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    ));
+
+    // STAGE 3: Organic Growth (3000ms - 6000ms)
+    // Breathing pulse
+    pulseScale.value = withDelay(3000, withRepeat(
+      withSequence(
+        withTiming(1.3, { duration: 3000, easing: Easing.out(Easing.ease) }),
+        withTiming(1, { duration: 0 })
+      ),
       -1,
       false
-    );
-    wave1Opacity.value = withRepeat(
-      withSequence(withTiming(0.4, { duration: 0 }), withTiming(0, { duration: 2400 })),
+    ));
+    pulseOpacity.value = withDelay(3000, withRepeat(
+      withSequence(
+        withTiming(0.2, { duration: 0 }),
+        withTiming(0, { duration: 3000, easing: Easing.out(Easing.ease) })
+      ),
       -1,
       false
-    );
+    ));
+    
+    // Tiny glowing particles moving upward
+    particleOpacity.value = withDelay(3000, withTiming(0.6, { duration: 1500 }));
+    particle1TranslateY.value = withDelay(3000, withRepeat(withTiming(-60, { duration: 4000, easing: Easing.out(Easing.linear) }), -1, false));
+    particle2TranslateY.value = withDelay(3400, withRepeat(withTiming(-80, { duration: 4500, easing: Easing.out(Easing.linear) }), -1, false));
+    particle3TranslateY.value = withDelay(3800, withRepeat(withTiming(-50, { duration: 3500, easing: Easing.out(Easing.linear) }), -1, false));
 
-    // Wave 2 (delayed by 800ms)
-    const wave2Timer = setTimeout(() => {
-      wave2Scale.value = withRepeat(
-        withSequence(withTiming(0.8, { duration: 0 }), withTiming(2.6, { duration: 2400 })),
-        -1,
-        false
-      );
-      wave2Opacity.value = withRepeat(
-        withSequence(withTiming(0.4, { duration: 0 }), withTiming(0, { duration: 2400 })),
-        -1,
-        false
-      );
-    }, 800);
+    // STAGE 4: AI Activation (4500ms - 6500ms)
+    glowLinesOpacity.value = withDelay(4500, withTiming(1, { duration: 1500, easing: Easing.out(Easing.ease) }));
+    taglineOpacity.value = withDelay(5000, withTiming(1, { duration: 1500, easing: Easing.out(Easing.ease) }));
 
-    // Wave 3 (delayed by 1600ms)
-    const wave3Timer = setTimeout(() => {
-      wave3Scale.value = withRepeat(
-        withSequence(withTiming(0.8, { duration: 0 }), withTiming(2.6, { duration: 2400 })),
-        -1,
-        false
-      );
-      wave3Opacity.value = withRepeat(
-        withSequence(withTiming(0.4, { duration: 0 }), withTiming(0, { duration: 2400 })),
-        -1,
-        false
-      );
-    }, 1600);
+    // STAGE 5: Dashboard Transition (7000ms - 7800ms)
+    finalCompressScale.value = withDelay(7000, withTiming(0.95, { duration: 800, easing: Easing.inOut(Easing.ease) }));
+    
+    // Navigate at 7.5 seconds
+    let timeoutFinished = false;
+    
+    const navigationTimer = setTimeout(() => {
+      timeoutFinished = true;
+      checkAndNavigate();
+    }, 7500);
 
-    // 3. Title Entrance
-    titleOpacity.value = withDelay(600, withTiming(1, { duration: 450 }));
-    titleTranslateY.value = withDelay(600, withTiming(0, { duration: 450 }));
+    const checkAndNavigate = async () => {
+      // If the 7.5s timeout hasn't finished, wait.
+      if (!timeoutFinished) return;
+      
+      // If auth is still loading/initializing from SecureStore, wait.
+      const state = useAuthStore.getState();
+      if (!state.isInitialized) return;
 
-    // 4. Tagline Entrance
-    taglineOpacity.value = withDelay(950, withTiming(1, { duration: 450 }));
-
-    // 5. Loading dots sequential pulse (Starts at 1200ms)
-    const loaderTimer = setTimeout(() => {
-      dot1Opacity.value = withRepeat(withSequence(withTiming(1, { duration: 600 }), withTiming(0.3, { duration: 600 })), -1, true);
-      const d2 = setTimeout(() => {
-        dot2Opacity.value = withRepeat(withSequence(withTiming(1, { duration: 600 }), withTiming(0.3, { duration: 600 })), -1, true);
-      }, 200);
-      const d3 = setTimeout(() => {
-        dot3Opacity.value = withRepeat(withSequence(withTiming(1, { duration: 600 }), withTiming(0.3, { duration: 600 })), -1, true);
-      }, 400);
-
-      return () => {
-        clearTimeout(d2);
-        clearTimeout(d3);
-      };
-    }, 1200);
-
-    // 6. Navigate exactly at 2.2 seconds based on authentication state
-    const navigationTimer = setTimeout(async () => {
       const hasOnboarded = await AsyncStorage.getItem('saathi_has_onboarded');
       const legacyHasOnboarded = await AsyncStorage.getItem('hasOnboarded');
       const isOnboarded = hasOnboarded === 'true' || legacyHasOnboarded === 'true';
       
-      const currentIsAuthenticated = useAuthStore.getState().isAuthenticated;
-      
       if (!isOnboarded) {
         router.replace('/(onboarding)');
-      } else if (!currentIsAuthenticated) {
+      } else if (!state.isAuthenticated) {
         router.replace('/(auth)/login');
       } else {
         router.replace('/(app)');
       }
-    }, 2200);
+    };
+
+    // Subscribe to auth state changes so we navigate as soon as initialization finishes
+    const unsubscribe = useAuthStore.subscribe((state, prevState) => {
+      if (state.isInitialized && !prevState.isInitialized) {
+        checkAndNavigate();
+      }
+    });
 
     return () => {
-      clearTimeout(wave2Timer);
-      clearTimeout(wave3Timer);
-      clearTimeout(loaderTimer);
       clearTimeout(navigationTimer);
+      unsubscribe();
     };
   }, []);
 
+  const bgStyle = useAnimatedStyle(() => ({
+    opacity: bgOpacity.value,
+  }));
+
   const logoStyle = useAnimatedStyle(() => ({
     opacity: logoOpacity.value,
-    transform: [{ scale: logoScale.value }]
+    transform: [
+      { scale: logoScale.value * finalCompressScale.value },
+      { translateY: logoFloat.value }
+    ],
   }));
 
-  const wave1Style = useAnimatedStyle(() => ({
-    transform: [{ scale: wave1Scale.value }],
-    opacity: wave1Opacity.value,
+  const pulseStyle = useAnimatedStyle(() => ({
+    opacity: pulseOpacity.value,
+    transform: [{ scale: pulseScale.value }],
   }));
 
-  const wave2Style = useAnimatedStyle(() => ({
-    transform: [{ scale: wave2Scale.value }],
-    opacity: wave2Opacity.value,
-  }));
-
-  const wave3Style = useAnimatedStyle(() => ({
-    transform: [{ scale: wave3Scale.value }],
-    opacity: wave3Opacity.value,
-  }));
-
-  const titleStyle = useAnimatedStyle(() => ({
-    opacity: titleOpacity.value,
-    transform: [{ translateY: titleTranslateY.value }]
+  const glowLinesStyle = useAnimatedStyle(() => ({
+    opacity: glowLinesOpacity.value,
+    transform: [{ scale: finalCompressScale.value }],
   }));
 
   const taglineStyle = useAnimatedStyle(() => ({
-    opacity: taglineOpacity.value
+    opacity: taglineOpacity.value,
+    transform: [{ translateY: interpolate(taglineOpacity.value, [0, 1], [10, 0]) }],
   }));
 
-  const waveBorderColor = isDark ? 'rgba(34, 197, 94, 0.25)' : 'rgba(255, 255, 255, 0.25)';
+  const createParticleStyle = (translateYValue: SharedValue<number>, initialX: number) => {
+    return useAnimatedStyle(() => {
+      const progress = Math.abs(translateYValue.value / 80);
+      const opac = interpolate(progress, [0, 0.5, 1], [0, particleOpacity.value, 0]);
+      return {
+        opacity: opac,
+        transform: [
+          { translateX: initialX },
+          { translateY: translateYValue.value }
+        ]
+      };
+    });
+  };
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Theme-aware solid base color backdrop */}
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: isDark ? theme.bg0 : theme.primaryDark }]} />
-      
-      {/* Radiating Waves (Background soil scanning animation) */}
-      <View style={styles.wavesWrapper}>
-        <Animated.View style={[styles.wave, wave1Style, { borderColor: waveBorderColor }]} />
-        <Animated.View style={[styles.wave, wave2Style, { borderColor: waveBorderColor }]} />
-        <Animated.View style={[styles.wave, wave3Style, { borderColor: waveBorderColor }]} />
-      </View>
-
-      {/* Glassmorphic Logo Container */}
-      <Animated.View style={[
-        styles.logoBox, 
-        logoStyle, 
-        { 
-          backgroundColor: isDark ? 'rgba(34, 197, 94, 0.08)' : 'rgba(255, 255, 255, 0.12)', 
-          borderColor: isDark ? 'rgba(34, 197, 94, 0.18)' : 'rgba(255, 255, 255, 0.25)' 
-        }
-      ]}>
-        <Image 
-          source={require('../assets/images/app-logo.png')} 
-          style={styles.logoImage} 
-          resizeMode="contain" 
+    <View style={styles.container}>
+      {/* Warm Premium Light Brown Theme (Earth Glow) */}
+      <Animated.View style={[StyleSheet.absoluteFill, bgStyle]}>
+        <LinearGradient
+          colors={isDark ? ['#1A1612', '#2A2218', '#382D20'] : ['#F6F1E7', '#EADBC8', '#D6C2A8']}
+          style={StyleSheet.absoluteFill}
         />
       </Animated.View>
 
-      {/* Text Elements */}
-      <Animated.View style={[styles.textContainer, titleStyle]}>
-        <Text style={[styles.title, { color: isDark ? theme.textPrimary : '#FFF' }]}>Saathi AI</Text>
-      </Animated.View>
-
-      <Animated.View style={[styles.textContainer, taglineStyle]}>
-        <Text style={[styles.tagline, { color: isDark ? theme.textSecondary : 'rgba(255, 255, 255, 0.65)' }]}>The Organic Intelligence Platform</Text>
-      </Animated.View>
-
-      {/* Sequential Loading Indicator */}
-      <View style={styles.loaderContainer}>
-        <Animated.View style={[styles.dot, { opacity: dot1Opacity, backgroundColor: isDark ? theme.primary : 'rgba(255, 255, 255, 0.8)' }]} />
-        <Animated.View style={[styles.dot, { opacity: dot2Opacity, backgroundColor: isDark ? theme.primary : 'rgba(255, 255, 255, 0.8)' }]} />
-        <Animated.View style={[styles.dot, { opacity: dot3Opacity, backgroundColor: isDark ? theme.primary : 'rgba(255, 255, 255, 0.8)' }]} />
+      {/* Floating Particles (Organic Growth) */}
+      <View style={styles.particlesContainer}>
+        <Animated.View style={[styles.particle, createParticleStyle(particle1TranslateY, -40)]} />
+        <Animated.View style={[styles.particle, createParticleStyle(particle2TranslateY, 30)]} />
+        <Animated.View style={[styles.particle, createParticleStyle(particle3TranslateY, -10)]} />
       </View>
 
-      {/* Footer Branding */}
-      <View style={styles.footer}>
-        <Text style={[styles.footerText, { color: isDark ? theme.textMuted : 'rgba(255, 255, 255, 0.4)' }]}>Mitti-AI Innovations · Est. 2024</Text>
+      {/* Center Logo Group */}
+      <View style={styles.logoContainer}>
+        {/* Breathing Pulse */}
+        <Animated.View style={[styles.pulseRing, pulseStyle, isDark && styles.pulseRingDark]} />
+        
+        {/* Elegant Glowing Lines (AI Activation) */}
+        <Animated.View style={[styles.glowLines, glowLinesStyle, isDark && styles.glowLinesDark]} />
+
+        {/* In-app Logo */}
+        <Animated.View style={logoStyle}>
+          <Image 
+            source={require('../assets/images/Apk_Logo_Transparent.png')} 
+            style={styles.logoImage} 
+            resizeMode="contain" 
+          />
+        </Animated.View>
       </View>
+
+      {/* Tagline */}
+      <Animated.View style={[styles.taglineContainer, taglineStyle]}>
+        <Text style={[styles.tagline, isDark && styles.taglineDark]} adjustsFontSizeToFit numberOfLines={1}>
+          The Organic Intelligence Platform
+        </Text>
+      </Animated.View>
     </View>
   );
 }
@@ -220,80 +222,81 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.primaryDeep,
+    backgroundColor: '#F6F1E7', // Fallback color
   },
-  wavesWrapper: {
-    position: 'absolute',
+  particlesContainer: {
+    ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    width: 200,
-    height: 200,
-    zIndex: 0,
+    zIndex: 1,
   },
-  wave: {
+  particle: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#7BCB5B', // Accent green
     position: 'absolute',
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 1.5,
+    shadowColor: '#6FAE4F',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  logoBox: {
-    width: 130,
-    height: 130,
-    borderRadius: 36,
-    borderWidth: 1,
+  logoContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
-    zIndex: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 12,
-    elevation: 4,
+    zIndex: 2,
   },
   logoImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 24,
+    width: 140,
+    height: 140,
+    // Soft shadow for premium feel
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
   },
-  textContainer: {
+  pulseRing: {
+    position: 'absolute',
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: '#C8AE88',
+  },
+  pulseRingDark: {
+    backgroundColor: '#524536',
+  },
+  glowLines: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    borderWidth: 1.5,
+    borderColor: 'rgba(123, 203, 91, 0.4)', // Subtle glowing green lines
+    shadowColor: '#7BCB5B',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 15,
+  },
+  glowLinesDark: {
+    borderColor: 'rgba(123, 203, 91, 0.2)',
+  },
+  taglineContainer: {
+    position: 'absolute',
+    bottom: height * 0.15,
     alignItems: 'center',
-    zIndex: 10,
-  },
-  title: {
-    fontFamily: 'Sora_800ExtraBold',
-    fontSize: 32,
-    color: '#FFF',
-    letterSpacing: -0.64,
+    width: '100%',
+    paddingHorizontal: 30, // Safe horizontal padding
+    zIndex: 2,
   },
   tagline: {
-    fontFamily: 'Sora_400Regular',
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.65)',
-    marginTop: 4,
+    fontSize: 16,
+    fontFamily: 'Sora_500Medium',
+    color: '#382D20', // Soft dark warm brown
+    letterSpacing: 1.3,
+    textAlign: 'center',
   },
-  loaderContainer: {
-    flexDirection: 'row',
-    marginTop: 40,
-    gap: 8,
-    zIndex: 10,
+  taglineDark: {
+    color: '#EADBC8',
   },
-  dot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255,255,255,0.8)',
-  },
-  footer: {
-    position: 'absolute',
-    bottom: 40,
-    zIndex: 10,
-  },
-  footerText: {
-    fontFamily: 'Sora_400Regular',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.4)',
-    letterSpacing: 0.88,
-  }
 });

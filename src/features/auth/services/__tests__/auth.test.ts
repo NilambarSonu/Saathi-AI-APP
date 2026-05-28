@@ -45,11 +45,12 @@ describe('Auth Service', () => {
       const mockResponse = { data: { success: true, token: 'test-token', user: { id: '1' } } };
       (api.post as jest.Mock).mockResolvedValue(mockResponse);
 
-      const result = await verifyOtp('123456', 'test@example.com');
+      const result = await verifyOtp('123456', 'test@example.com', 'EMAIL');
 
       expect(api.post).toHaveBeenCalledWith('/auth/verify-otp', {
         otp: '123456',
         email: 'test@example.com',
+        provider: 'EMAIL',
         client: 'mobile',
       });
       expect(result).toEqual(mockResponse.data);

@@ -3,7 +3,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 
-WebBrowser.maybeCompleteAuthSession();
 
 // ─────────────── USER TYPE ───────────────
 export interface User {
@@ -20,23 +19,49 @@ export interface User {
   avatar_url?: string; // optional compat alias
 }
 
-// ─────────────── REGISTER FLOW ───────────────
-// Used by: register.tsx (via registerAccount alias)
-export async function register(data: {
-  username: string;
-  email: string;
-  phone?: string;
-  password: string;
-}) {
-  const response = await api.post('/auth/register', {
-    ...data,
-    client: 'mobile',
-  });
-  return response.data;
-  // Returns: { success, message, email, requiresOTP: true }
+// ─────────────── HELPER: PHONE NORMALIZATION ───────────────
+export function parseContact(contact: string, provider: 'EMAIL' | 'TEXTBEE') {
+  if (provider === 'EMAIL') {
+    return { email: contact.toLowerCase().trim() };
+  } else {
+    let cleanPhone = contact.replace(/\D/g, '');
+    let countryCode = '+91';
+    if (cleanPhone.length > 10) {
+      if (cleanPhone.startsWith('91') && cleanPhone.length === 12) {
+        countryCode = '+91';
+        cleanPhone = cleanPhone.slice(2);
+      }
+    }
+    return { phone: cleanPhone, countryCode };
+  }
 }
 
-// Alias used by register.tsx
+// ─────────────── REGISTER FLOW ───────────────
+export async function register(data: {
+  username: string;
+  contact: string;
+  provider: 'EMAIL' | 'TEXTBEE';
+  password: string;
+}) {
+  const contactPayload = parseContact(data.contact, data.provider);
+  
+  // Inject a dummy email for phone registrations to satisfy backend validation
+  const payload: any = {
+    username: data.username.toLowerCase().trim().replace(/\s+/g, '_'),
+    password: data.password,
+    ...contactPayload,
+    client: 'mobile',
+  };
+
+  if (data.provider === 'TEXTBEE' && !payload.email) {
+    payload.email = `${contactPayload.phone}@phone.saathiai.org`;
+  }
+
+  const response = await api.post('/auth/register', payload);
+  return response.data;
+}
+
+// Alias for old code
 export async function registerAccount(data: {
   name?: string;
   username?: string;
@@ -44,60 +69,56 @@ export async function registerAccount(data: {
   phone?: string;
   password: string;
 }) {
-  // Map `name` → `username` since server expects `username`
-  const payload = {
-    username: (data.username || data.name || '').toLowerCase().trim().replace(/\s+/g, '_'),
-    email: data.email,
+  const isPhone = !!data.phone;
+  return register({
+    username: data.username || data.name || '',
+    contact: isPhone ? data.phone! : data.email,
+    provider: isPhone ? 'TEXTBEE' : 'EMAIL',
     password: data.password,
-    ...(data.phone ? { phone: data.phone } : {}),
-    client: 'mobile',
-  };
-  const response = await api.post('/auth/register', payload);
-  return response.data;
-  // Returns: { success, message, email, requiresOTP: true }
+  });
 }
 
 // ─────────────── SEND OTP ───────────────
-export async function sendOtp(email: string, purpose: 'register' | 'login') {
+export async function sendOtp(contact: string, provider: 'EMAIL' | 'TEXTBEE', purpose: 'register' | 'login') {
+  const contactPayload = parseContact(contact, provider);
   const response = await api.post('/auth/send-otp', {
-    email,
+    ...contactPayload,
     purpose,
-    provider: 'EMAIL',
+    provider,
   });
   return response.data;
-  // Returns: { ok, otpId, expiresIn, provider, contactType }
 }
 
 // Alias used by verify-otp.tsx (resend)
-export async function resendOTP(email: string) {
-  return sendOtp(email, 'register');
+export async function resendOTP(contact: string, provider: 'EMAIL' | 'TEXTBEE' = 'EMAIL') {
+  return sendOtp(contact, provider, 'register');
 }
 
 // ─────────────── VERIFY OTP (Mobile) ───────────────
-export async function verifyOtp(otp: string, email: string) {
+export async function verifyOtp(otp: string, contact: string, provider: 'EMAIL' | 'TEXTBEE') {
+  const contactPayload = parseContact(contact, provider);
   const response = await api.post('/auth/verify-otp', {
     otp,
-    email,
+    ...contactPayload,
+    provider,
     client: 'mobile',
   });
   return response.data;
-  // Returns: { success, token, refreshToken, expiresIn, user }
 }
 
-// Alias used by verify-otp.tsx (args reversed)
-export async function verifyOTP(email: string, otp: string) {
-  return verifyOtp(otp, email);
+// Alias for old code
+export async function verifyOTP(contact: string, otp: string, provider: 'EMAIL' | 'TEXTBEE' = 'EMAIL') {
+  return verifyOtp(otp, contact, provider);
 }
 
 // ─────────────── LOGIN ───────────────
 export async function login(usernameOrEmail: string, password: string) {
   const response = await api.post('/auth/login', {
-    usernameOrEmail,
+    usernameOrEmail: usernameOrEmail.toLowerCase().trim(),
     password,
     client: 'mobile',
   });
   return response.data;
-  // Returns: { success, token, refreshToken, expiresIn, user }
 }
 
 // Alias used by login.tsx
@@ -147,20 +168,47 @@ export async function getUser(): Promise<User> {
   return response.data.user;
 }
 
-// ─────────────── FORGOT PASSWORD (send OTP via login purpose) ───────────────
-// Step 1: sendOtp(email, 'login') — no auth needed
-// Step 2: verifyOtp → returns token
-// Step 3: sendPasswordChangeOtp (with token) → returns otpId
-// Step 4: changePassword with otpId + new OTP + newPassword
+// ─────────────── FORGOT PASSWORD ───────────────
+export async function forgotPassword(contact: string, provider: 'EMAIL' | 'TEXTBEE') {
+  const contactPayload = parseContact(contact, provider);
+  const response = await api.post('/auth/forgot-password', {
+    ...contactPayload,
+    provider,
+  });
+  return response.data;
+}
 
+export async function resetPassword(
+  contact: string,
+  provider: 'EMAIL' | 'TEXTBEE',
+  otp: string,
+  newPassword: string,
+  confirmPassword: string
+) {
+  const contactPayload = parseContact(contact, provider);
+  const response = await api.post('/auth/reset-password', {
+    ...contactPayload,
+    otp,
+    newPassword,
+    confirmPassword,
+    client: 'mobile',
+  });
+  return response.data;
+}
+
+// ─────────────── CHANGE PASSWORD (LOGGED IN USER) ───────────────
 export async function sendPasswordChangeOtp() {
   const response = await api.post('/auth/send-password-change-otp');
   return response.data;
-  // Returns: { ok, otpId, expiresIn, provider, message }
 }
 
 export async function changePassword(otpId: string, otp: string, newPassword: string) {
-  const response = await api.post('/auth/change-password', { otpId, otp, newPassword });
+  const response = await api.post('/auth/change-password', {
+    otpId,
+    otp,
+    newPassword,
+    client: 'mobile',
+  });
   return response.data;
 }
 
